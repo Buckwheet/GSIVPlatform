@@ -83,6 +83,7 @@ const go2GetRoute = createRoute({
   request: { params: z.object({ char: z.string() }), query: z.object({ instance: z.string().optional() }) },
   responses: {
     200: { content: { "application/json": { schema: settingsBody } }, description: "go2 settings" },
+    400: { description: "invalid character name or instance" },
     500: { description: "ruby failure" },
   },
 });
@@ -97,6 +98,7 @@ const go2PutRoute = createRoute({
   },
   responses: {
     200: { content: { "application/json": { schema: okSchema } }, description: "written" },
+    400: { description: "invalid character name or instance" },
     500: { description: "ruby failure" },
   },
 });
@@ -107,6 +109,7 @@ const eherbsGetRoute = createRoute({
   request: { params: z.object({ char: z.string() }), query: z.object({ instance: z.string().optional() }) },
   responses: {
     200: { content: { "application/json": { schema: settingsBody } }, description: "eherbs settings" },
+    400: { description: "invalid character name or instance" },
     500: { description: "ruby failure" },
   },
 });
@@ -121,6 +124,7 @@ const eherbsPutRoute = createRoute({
   },
   responses: {
     200: { content: { "application/json": { schema: okSchema } }, description: "written" },
+    400: { description: "invalid character name or instance" },
     500: { description: "ruby failure" },
   },
 });
