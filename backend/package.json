@@ -39,7 +39,7 @@
     "*.{ts,tsx}": [
       "biome check --write"
     ],
-    "*.{json,md}": [
+    "*.{json}": [
       "biome check --write"
     ]
   }

@@ -44,7 +44,9 @@ export class Auth {
     if (!token) return null;
     for (const [stored, user] of this.tokens) {
       if (safeEqual(token, stored)) {
-        await this.kv.set(`auth:last:${token.slice(0, 8)}`, user.name, 60_000).catch(() => {});
+        await this.kv
+          .set(`auth:last:${createHash("sha256").update(token).digest("hex")}`, user.name, 60_000)
+          .catch(() => {});
         return user;
       }
     }
