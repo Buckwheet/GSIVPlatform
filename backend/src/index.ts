@@ -1,8 +1,11 @@
+import { dirname, join } from "node:path";
 import { serve } from "@hono/node-server";
 import { Auth } from "./core/auth.js";
+import { ConfigFiles } from "./core/config-files.js";
 import { CoreDb } from "./core/db.js";
 import { EntryYaml } from "./core/entry-yaml.js";
 import { createKV } from "./core/kv.js";
+import { LichDb } from "./core/lich-db.js";
 import { Registry } from "./core/registry.js";
 import { Ruby } from "./core/ruby.js";
 import { createApp } from "./core/server.js";
@@ -14,6 +17,7 @@ import { createAccountsModule } from "./modules/accounts/index.js";
 import { AccountsStore } from "./modules/accounts/store.js";
 import { createCharactersModule } from "./modules/characters/index.js";
 import { CharactersStore } from "./modules/characters/store.js";
+import { createConfigModule } from "./modules/config/index.js";
 import { createGemsModule } from "./modules/gems/index.js";
 import { GemsStore } from "./modules/gems/store.js";
 import { createHealerModule } from "./modules/healer/index.js";
@@ -67,6 +71,14 @@ const db = new CoreDb(process.env.DB_PATH || "data/gsiv.db");
 const accountsStore = new AccountsStore(db, new EntryYaml(), new Ruby(), new Sge());
 const totp = new Totp();
 registry.register(createAccountsModule(accountsStore, totp));
+
+// Config: lich.db3 (go2/eherbs) + lich config dirs via review-gated capabilities.
+const entryDir = dirname(process.env.ENTRY_YAML_PATH || "/opt/gs4sd/lich5/data/entry.yaml");
+const configFiles = new ConfigFiles({
+  gsivDir: process.env.GSIV_DATA_DIR || join(entryDir, "GSIV"),
+  gstDir: join(entryDir, "GST"),
+});
+registry.register(createConfigModule(new LichDb(), configFiles));
 
 registry.validate();
 const auth = new Auth(kv);

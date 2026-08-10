@@ -1,5 +1,5 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { validateCharName } from "./systemd.js";
 
 // ---------------------------------------------------------------------------
@@ -142,7 +142,7 @@ export class ConfigFiles {
     const charDir = charDirOverride ?? this.resolveCharDir(char, instance);
     if (!charDir) return null;
     const full = resolve(charDir, ...segments);
-    const prefix = `${resolve(charDir)}${sep()}`;
+    const prefix = `${resolve(charDir)}${sep}`;
     if (full !== resolve(charDir) && !full.startsWith(prefix)) return null;
     return full;
   }
@@ -159,8 +159,4 @@ export class ConfigFiles {
       }
     }
   }
-}
-
-function sep(): string {
-  return require("node:path").sep;
 }

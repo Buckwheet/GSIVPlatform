@@ -87,3 +87,10 @@ delta, and a security_review pass before merge.
 - **Scan:** SGE auth + active character list via `core/sge.ts` (TLS, injectable transport); scan results persist in CoreDb (`accounts`, `account_characters` migrations). Scan-all runs in the background with a process-local lock and 30s spacing between accounts (injectable for tests). playdotnet inactive-char + store-balance scraping is a tracked follow-on (plan Task 9) — not yet ported.
 - `TOTP_SECRET_PATH` / `ENTRY_YAML_PATH` envs, never hardcoded in commits.
 - **Known trade-offs (v1/Lich-faithful, server-only):** the plaintext password is passed to Ruby via ARGV (briefly visible in the process list during encrypt/decrypt — v1 behavior; stdin-passing is a tracked follow-on); the SGE TLS socket uses `rejectUnauthorized: false` (v1 + Lich do the same for eaccess.play.net).
+
+## Module: config (config files + go2 + eherbs)
+- Scopes: `config.read` (list/read config files, go2/eherbs settings), `config.write` (write config files, copy-from, go2/eherbs settings). All enforced by scopeGuard.
+- **lich.db3 access is confined to `core/lich-db.ts`** — the only place Ruby runs against the Lich sqlite db (`LICH_DB_PATH` env, default `/opt/gs4sd/lich5/data/lich.db3`). Fixed Ruby templates; scope (`{INSTANCE}:{Char}`) and settings JSON pass via ARGV — never interpolated into Ruby source (v1 interpolated the scope: an injection risk). Char names validated with the strict regex; `instance` restricted to `GSIV`/`GST`/`GS3`.
+- **Lich config dir IO is confined to `core/config-files.ts`** (`GSIV_DATA_DIR`/`GST_DATA_DIR`, derived from the entry.yaml dir). Every relative path is segment-validated and resolved inside the char dir (traversal-proof: `..`, absolute, empty segments rejected — stricter than v1's `startsWith` guard). Writes and copy-from are backup-then-write (`.bak.<ts>`).
+- Route path deviation vs v1: config file paths travel as `?path=` query (GET) / `{path, content}` body (PUT) instead of a path wildcard — router compatibility; same semantics.
+- No SQL prepared statements outside CoreDb; no eval, no shell strings; Ruby confined to core/lich-db.ts (and core/ruby.ts for PasswordCipher).
