@@ -56,7 +56,7 @@ describe("LichDb capability", () => {
 
   it("maps an exec failure to {ok:false, error}", async () => {
     const lich = new LichDb(async () => ({ stdout: "", stderr: "no such db", code: 1 }));
-    expect(await lich.go2Get("Fisternar")).toEqual({ ok: false, error: "no such db" });
+    expect(await lich.go2Get("Fisternar")).toEqual({ ok: false, code: "exec", error: "no such db" });
   });
 
   it("defaults the db path from LICH_DB_PATH-style env at construction", () => {

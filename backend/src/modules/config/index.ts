@@ -186,7 +186,7 @@ export function createConfigModule(lichDb: LichDb, configFiles: ConfigFiles): Mo
         const { char } = c.req.valid("param");
         const instance = c.req.valid("query").instance;
         const res = await lichDb.go2Get(char, instance ?? "GSIV");
-        if (!res.ok) return c.json({ error: res.error }, 500);
+        if (!res.ok) return c.json({ error: res.error }, res.code === "invalid_input" ? 400 : 500);
         return c.json(res.settings, 200);
       });
 
@@ -195,7 +195,7 @@ export function createConfigModule(lichDb: LichDb, configFiles: ConfigFiles): Mo
         const settings = c.req.valid("json");
         const instance = c.req.valid("query").instance;
         const res = await lichDb.go2Put(char, instance ?? "GSIV", settings);
-        if (!res.ok) return c.json({ error: res.error }, 500);
+        if (!res.ok) return c.json({ error: res.error }, res.code === "invalid_input" ? 400 : 500);
         return c.json({ ok: true }, 200);
       });
 
@@ -203,7 +203,7 @@ export function createConfigModule(lichDb: LichDb, configFiles: ConfigFiles): Mo
         const { char } = c.req.valid("param");
         const instance = c.req.valid("query").instance;
         const res = await lichDb.eherbsGet(char, instance ?? "GSIV");
-        if (!res.ok) return c.json({ error: res.error }, 500);
+        if (!res.ok) return c.json({ error: res.error }, res.code === "invalid_input" ? 400 : 500);
         return c.json(res.settings, 200);
       });
 
@@ -212,7 +212,7 @@ export function createConfigModule(lichDb: LichDb, configFiles: ConfigFiles): Mo
         const settings = c.req.valid("json");
         const instance = c.req.valid("query").instance;
         const res = await lichDb.eherbsPut(char, instance ?? "GSIV", settings);
-        if (!res.ok) return c.json({ error: res.error }, 500);
+        if (!res.ok) return c.json({ error: res.error }, res.code === "invalid_input" ? 400 : 500);
         return c.json({ ok: true }, 200);
       });
     },

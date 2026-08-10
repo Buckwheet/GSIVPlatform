@@ -19,7 +19,7 @@ export type ExecFn = (cmd: string, args: string[], timeoutMs: number) => Promise
 export type Instance = "GSIV" | "GST" | "GS3";
 
 const TIMEOUT_MS = 10_000;
-const INSTANCE_RE = /^[A-Z0-9]{2,8}$/;
+const INSTANCE_RE = /^(GSIV|GST|GS3)$/;
 const DEFAULT_DB_PATH = process.env.LICH_DB_PATH || "/opt/gs4sd/lich5/data/lich.db3";
 
 const GO2_GET_SCRIPT = `
@@ -138,9 +138,9 @@ function defaultExec(cmd: string, args: string[], timeoutMs: number): Promise<Ex
   });
 }
 
-type Result<T> = ({ ok: true } & T) | { ok: false; error: string };
+type Result<T> = ({ ok: true } & T) | { ok: false; code: "invalid_input" | "exec" | "parse"; error: string };
 
-type WriteResult = { ok: true } | { ok: false; error: string };
+type WriteResult = { ok: true } | { ok: false; code: "invalid_input" | "exec"; error: string };
 
 export class LichDb {
   constructor(
@@ -187,13 +187,14 @@ export class LichDb {
     instance: string,
   ): Promise<Result<{ settings: Record<string, unknown> }>> {
     const scope = this.scopeFor(char, instance);
-    if (!scope) return { ok: false, error: "invalid character name or instance" };
+    if (!scope) return { ok: false, code: "invalid_input", error: "invalid character name or instance" };
     const res = await this.exec("ruby", ["-e", script, scope, this.dbPath], TIMEOUT_MS);
-    if (res.code !== 0) return { ok: false, error: res.stderr.trim() || `ruby failed (code ${res.code})` };
+    if (res.code !== 0)
+      return { ok: false, code: "exec", error: res.stderr.trim() || `ruby failed (code ${res.code})` };
     try {
       return { ok: true, settings: JSON.parse(res.stdout || "{}") as Record<string, unknown> };
     } catch {
-      return { ok: false, error: "ruby returned invalid JSON" };
+      return { ok: false, code: "parse", error: "ruby returned invalid JSON" };
     }
   }
 
@@ -204,9 +205,10 @@ export class LichDb {
     settings: Record<string, unknown>,
   ): Promise<WriteResult> {
     const scope = this.scopeFor(char, instance);
-    if (!scope) return { ok: false, error: "invalid character name or instance" };
+    if (!scope) return { ok: false, code: "invalid_input", error: "invalid character name or instance" };
     const res = await this.exec("ruby", ["-e", script, scope, this.dbPath, JSON.stringify(settings)], TIMEOUT_MS);
-    if (res.code !== 0) return { ok: false, error: res.stderr.trim() || `ruby failed (code ${res.code})` };
+    if (res.code !== 0)
+      return { ok: false, code: "exec", error: res.stderr.trim() || `ruby failed (code ${res.code})` };
     return { ok: true };
   }
 }
