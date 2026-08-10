@@ -12,7 +12,7 @@
 - KV audit keys are full SHA-256 hashes of the token — never the token itself.
 
 ## Scopes
-- Every route MUST declare a scope (registry + spec boot validation).
+- Every route MUST declare a scope; scopeGuard enforces at request time (fail-closed 403), and buildSpec throws when serving /api/spec if any route is missing from routeScopes (registry.validate() checks scope usage/key format at boot).
 - Admin `*` bypasses scope checks.
 - A route whose path matches no `routeScopes` entry returns 403 (fail closed).
 - No route may be public unless explicitly mounted outside `/api/modules/*`
@@ -47,3 +47,9 @@ delta, and a security_review pass before merge.
 - DB path from `INV_DB_PATH` env, never hardcoded in commits.
 - Server boots without inventory if the DB is missing (module skipped with a warning) — availability never depends on inv.db3.
 - No write queries, no shell execution.
+
+## Module: pricing (sales-tracker fold-in)
+- Scopes: `pricing.read` (sales/intelligence/listings read), `pricing.write` (POST /listings), `pricing.scrape` (POST /scrape). All enforced by scopeGuard.
+- Scraper fetches public data from `https://shops.elanthia.online/data/removed_items.json` — no credentials; ETag cached in scrape_state to avoid redundant fetches. External host is rate-limited by the module-level limiter plus the operator's manual trigger cadence (no scheduled auto-scrape by default).
+- All SQL prepared statements; the only free-text input (`q` in /sales, gem_type in /gems/*) is bound via named parameters — LIKE wildcards are not escaped (matches v1 behavior; filter-only, not injection).
+- Pricing DB is a core service: open failure is fatal (server does not boot silently degraded, unlike optional inventory).

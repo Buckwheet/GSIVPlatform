@@ -8,6 +8,9 @@ import { EventBus } from "./core/ws.js";
 import { healthModule } from "./modules/health/index.js";
 import { createInventoryModule } from "./modules/inventory/index.js";
 import { InventoryDbError, InventoryStore } from "./modules/inventory/store.js";
+import { createPricingModule } from "./modules/pricing/index.js";
+import { PricingScraper } from "./modules/pricing/scraper.js";
+import { PricingStore } from "./modules/pricing/store.js";
 
 const registry = new Registry();
 registry.register(healthModule);
@@ -24,6 +27,12 @@ try {
     throw err;
   }
 }
+
+// Pricing is a core service: DB open failure is fatal (unlike optional inventory).
+const pricingDb = new CoreDb(process.env.PRICING_DB_PATH || "data/pricing.db");
+const pricingStore = new PricingStore(pricingDb);
+const pricingScraper = new PricingScraper(pricingStore);
+registry.register(createPricingModule(pricingStore, pricingScraper));
 
 registry.validate();
 

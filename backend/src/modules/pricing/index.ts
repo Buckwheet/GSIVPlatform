@@ -249,8 +249,9 @@ export function createPricingModule(store: PricingStore, scraper: PricingScraper
       router.openapi(gemTypesRoute, (c) => c.json(store.gemTypes()));
       router.openapi(gemSalesRoute, (c) => {
         const q = c.req.valid("query");
-        const limit = q.limit ?? 100;
-        const offset = ((q.page ?? 1) - 1) * limit;
+        const limit = Math.min(200, Math.max(1, q.limit ?? 100));
+        const page = Math.max(1, q.page ?? 1);
+        const offset = (page - 1) * limit;
         return c.json(store.gemSales(q.gem_type, limit, offset));
       });
       router.openapi(gemIntelligenceRoute, (c) => {
@@ -279,8 +280,9 @@ export function createPricingModule(store: PricingStore, scraper: PricingScraper
       });
       router.openapi(getListingsRoute, (c) => {
         const q = c.req.valid("query");
-        const limit = q.limit ?? 100;
-        const offset = ((q.page ?? 1) - 1) * limit;
+        const limit = Math.min(200, Math.max(1, q.limit ?? 100));
+        const page = Math.max(1, q.page ?? 1);
+        const offset = (page - 1) * limit;
         return c.json(store.getListings(q.shop, limit, offset));
       });
       router.openapi(sellThroughRoute, (c) => {

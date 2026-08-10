@@ -418,17 +418,18 @@ export class PricingStore {
   }
 
   gemSales(gemType?: string, limit = 100, offset = 0): { sales: GemSale[]; total: number } {
-    const whereClause = gemType
-      ? `WHERE name LIKE '%containing %' AND name LIKE '%${gemType.replace(/'/g, "''")}%'`
-      : `WHERE name LIKE '%containing %'`;
+    const whereClause = gemType ? "WHERE name LIKE '%containing %' AND name LIKE ?" : "WHERE name LIKE '%containing %'";
+    const likeParams = gemType ? [`%${gemType}%`] : [];
 
-    const total = (this.db.prepare(`SELECT COUNT(*) as n FROM sales ${whereClause}`).get() as { n: number }).n;
+    const total = (
+      this.db.prepare(`SELECT COUNT(*) as n FROM sales ${whereClause}`).get(...likeParams) as { n: number }
+    ).n;
     const rows = this.db
       .prepare(
         `SELECT id, name, cost, town, shop, removed_date FROM sales ${whereClause}
          ORDER BY removed_date DESC LIMIT ? OFFSET ?`,
       )
-      .all(limit, offset) as {
+      .all(...likeParams, limit, offset) as {
       id: number;
       name: string;
       cost: number;
