@@ -37,10 +37,10 @@
   },
   "lint-staged": {
     "*.{ts,tsx}": [
-      "biome check --staged"
+      "biome check"
     ],
     "*.{json,md}": [
-      "biome check --staged"
+      "biome check"
     ]
   }
 }
