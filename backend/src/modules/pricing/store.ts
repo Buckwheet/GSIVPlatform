@@ -890,7 +890,13 @@ export class PricingStore {
          VALUES (@item_id, @name, @town, @shop, @cost, @enchant, @worn, @wear_location, @material, @item_type,
           @is_weapon, @is_armor, @is_jewelry, @enhancives, @removed_date, @scraped_at)`,
       )
-      .run({ ...sale, scraped_at: new Date().toISOString() });
+      .run({
+        ...sale,
+        is_weapon: sale.is_weapon ? 1 : 0,
+        is_armor: sale.is_armor ? 1 : 0,
+        is_jewelry: sale.is_jewelry ? 1 : 0,
+        scraped_at: new Date().toISOString(),
+      });
     return result.changes;
   }
 
