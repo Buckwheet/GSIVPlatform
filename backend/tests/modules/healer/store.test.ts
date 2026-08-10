@@ -14,14 +14,14 @@ describe("HealerStore", () => {
 
   it("register stores a healer and status lists it", async () => {
     const h = await store.register("Fisternar", 1234, "Cleric", 50);
-    expect(h.character).toBe("fisternar");
+    expect(h.character).toBe("Fisternar");
     expect(h.room_id).toBe(1234);
     expect(h.prof).toBe("Cleric");
     expect(h.level).toBe(50);
     expect(h.last_heartbeat).toBeGreaterThan(0);
     const s = await store.status();
     expect(s.healers).toHaveLength(1);
-    expect(s.healers[0].character).toBe("fisternar");
+    expect(s.healers[0].character).toBe("Fisternar");
   });
 
   it("heartbeat upserts and refreshes the timestamp", async () => {
@@ -34,7 +34,7 @@ describe("HealerStore", () => {
     expect(h.last_heartbeat).toBe(2_000_000);
     // heartbeat for an unregistered char creates it
     const created = await store.heartbeat("Neleourg", 42);
-    expect(created.character).toBe("neleourg");
+    expect(created.character).toBe("Neleourg");
     expect(created.room_id).toBe(42);
   });
 
@@ -55,7 +55,7 @@ describe("HealerStore", () => {
     await store.request("Arli", 500, { hp: 20 });
     await store.request("Other", 999);
     const next = await store.nextFor("healbob");
-    expect(next).toEqual({ target: "zepherus", room_id: 500, request_id: expect.stringMatching(/^heal_/) });
+    expect(next).toEqual({ target: "Zepherus", room_id: 500, request_id: expect.stringMatching(/^heal_/) });
   });
 
   it("nextFor returns null for a different room or an unknown healer", async () => {
@@ -78,11 +78,15 @@ describe("HealerStore", () => {
 
   it("complete sets the status and prunes requests to the last 50", async () => {
     const first = await store.request("Zepherus", 500);
-    for (let i = 0; i < 50; i++) await store.request(`Char${i}`, 500);
-    await store.complete(first.request_id, "not_in_room");
+    const keep = await store.request("Arli", 500);
+    await store.complete(keep.request_id, "not_in_room");
     const all = await store.requests();
-    expect(all).toHaveLength(50);
-    expect(all.every((r) => r.request_id !== first.request_id)).toBe(true);
+    expect(all.find((r) => r.request_id === keep.request_id)?.status).toBe("not_in_room");
+    for (let i = 0; i < 50; i++) await store.request(`Char${i}`, 500);
+    await store.complete(first.request_id, "complete");
+    const pruned = await store.requests();
+    expect(pruned).toHaveLength(50);
+    expect(pruned.every((r) => r.request_id !== first.request_id)).toBe(true);
   });
 
   it("status prunes healers with no heartbeat in 30s and counts pending", async () => {
@@ -94,7 +98,7 @@ describe("HealerStore", () => {
     await store.request("Zepherus", 500);
     vi.setSystemTime(1_000_000 + 31_000);
     const s = await store.status();
-    expect(s.healers.map((h) => h.character)).toEqual(["fresh"]);
+    expect(s.healers.map((h) => h.character)).toEqual(["Fresh"]);
     expect(s.pending).toBe(1);
   });
 });

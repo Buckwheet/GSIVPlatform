@@ -57,7 +57,7 @@ describe("healer module routes", () => {
     const status = await app.request("/api/modules/healer/status", { headers: auth });
     const body = (await status.json()) as { healers: { character: string; room_id: number }[]; pending: number };
     expect(body.healers).toHaveLength(1);
-    expect(body.healers[0]).toEqual(expect.objectContaining({ character: "healbob", room_id: 1234 }));
+    expect(body.healers[0]).toEqual(expect.objectContaining({ character: "Healbob", room_id: 1234 }));
     expect(body.pending).toBe(0);
   });
 
@@ -76,7 +76,7 @@ describe("healer module routes", () => {
 
     const next = await app.request("/api/modules/healer/next/healbob", { headers: auth });
     const nextBody = (await next.json()) as { target: string; request_id: string };
-    expect(nextBody).toEqual({ target: "zepherus", room_id: 500, request_id });
+    expect(nextBody).toEqual({ target: "Zepherus", room_id: 500, request_id });
 
     const accept = await post(app, "/api/modules/healer/accept", {
       request_id,
@@ -99,6 +99,53 @@ describe("healer module routes", () => {
     expect(list[0].healer).toBe("healbob");
   });
 
+  it("heartbeat upserts a healer (200)", async () => {
+    const app = makeApp("limited:tok:healer.read,healer.write");
+    const hb = await post(app, "/api/modules/healer/heartbeat", { character: "Neleourg", room_id: 42 });
+    expect(hb.status).toBe(200);
+    const status = await app.request("/api/modules/healer/status", { headers: auth });
+    const body = (await status.json()) as { healers: { character: string; room_id: number }[] };
+    expect(body.healers).toEqual([expect.objectContaining({ character: "Neleourg", room_id: 42 })]);
+  });
+
+  it("next for an unknown healer returns {target:null}", async () => {
+    const app = makeApp("limited:tok:healer.read,healer.write");
+    const res = await app.request("/api/modules/healer/next/ghost", { headers: auth });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ target: null });
+  });
+
+  it("/requests returns only the last 20", async () => {
+    const app = makeApp("limited:tok:healer.read,healer.write");
+    for (let i = 0; i < 25; i++) {
+      await post(app, "/api/modules/healer/request", { character: "Char" + i, room_id: 1 });
+    }
+    const res = await app.request("/api/modules/healer/requests", { headers: auth });
+    const list = (await res.json()) as { character: string }[];
+    expect(list).toHaveLength(20);
+    expect(list[0].character).toBe("Char5");
+  });
+
+  it("accept/complete on an unknown request_id still 200 and emit events (v1 behavior)", async () => {
+    const bus = new EventBus();
+    const events: unknown[] = [];
+    bus.on("healer", "heal_accepted", (p) => events.push(p));
+    const app = makeApp("limited:tok:healer.read,healer.write", bus);
+    const accept = await post(app, "/api/modules/healer/accept", {
+      request_id: "heal_999_1",
+      character: "Healbob",
+      target: "Zepherus",
+    });
+    expect(accept.status).toBe(200);
+    expect(events).toHaveLength(1);
+    const complete = await post(app, "/api/modules/healer/complete", {
+      request_id: "heal_999_1",
+      character: "Healbob",
+      target: "Zepherus",
+    });
+    expect(complete.status).toBe(200);
+  });
+
   it("emits healer_update, heal_request, heal_accepted, heal_complete on the event bus", async () => {
     const bus = new EventBus();
     const events: Record<string, unknown[]> = {
@@ -113,7 +160,7 @@ describe("healer module routes", () => {
     await post(app, "/api/modules/healer/register", { character: "Healbob", room_id: 500 });
     expect(events.healer_update).toHaveLength(1);
     expect(events.healer_update[0]).toEqual(
-      expect.objectContaining({ healers: [expect.objectContaining({ character: "healbob" })] }),
+      expect.objectContaining({ healers: [expect.objectContaining({ character: "Healbob" })] }),
     );
 
     const req = await post(app, "/api/modules/healer/request", { character: "Zepherus", room_id: 500 });
@@ -125,7 +172,7 @@ describe("healer module routes", () => {
 
     await post(app, "/api/modules/healer/accept", { request_id, character: "healbob", target: "Zepherus" });
     expect(events.heal_accepted).toHaveLength(1);
-    expect(events.heal_accepted[0]).toEqual({ request_id, healer: "healbob", target: "zepherus" });
+    expect(events.heal_accepted[0]).toEqual({ request_id, healer: "healbob", target: "Zepherus" });
 
     await post(app, "/api/modules/healer/complete", {
       request_id,
@@ -134,7 +181,7 @@ describe("healer module routes", () => {
       status: "complete",
     });
     expect(events.heal_complete).toHaveLength(1);
-    expect(events.heal_complete[0]).toEqual({ request_id, healer: "healbob", target: "zepherus", status: "complete" });
+    expect(events.heal_complete[0]).toEqual({ request_id, healer: "healbob", target: "Zepherus", status: "complete" });
   });
 
   it("exposes healer routes in OpenAPI spec", async () => {

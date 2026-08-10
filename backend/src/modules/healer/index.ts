@@ -208,8 +208,8 @@ export function createHealerModule(store: HealerStore): Module {
         await store.accept(body.request_id, body.character);
         eventBus.emit("heal_accepted", {
           request_id: body.request_id,
-          healer: body.character.toLowerCase(),
-          target: body.target.toLowerCase(),
+          healer: body.character,
+          target: body.target,
         });
         return c.json({ ok: true }, 200);
       });
@@ -219,8 +219,8 @@ export function createHealerModule(store: HealerStore): Module {
         await store.complete(body.request_id, body.status as HealStatus | undefined);
         eventBus.emit("heal_complete", {
           request_id: body.request_id,
-          healer: body.character.toLowerCase(),
-          target: body.target.toLowerCase(),
+          healer: body.character,
+          target: body.target,
           status: body.status ?? "complete",
         });
         return c.json({ ok: true }, 200);

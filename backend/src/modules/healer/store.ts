@@ -49,7 +49,7 @@ export class HealerStore {
   /** Register (or update) a healer with their current room. */
   async register(char: string, roomId: number | string, prof?: string, level?: number): Promise<HealerInfo> {
     const info: HealerInfo = {
-      character: char.toLowerCase(),
+      character: char,
       room_id: roomId,
       prof,
       level,
@@ -64,7 +64,7 @@ export class HealerStore {
     const existing = await this.getRegistry(char);
     const info: HealerInfo = existing
       ? { ...existing, room_id: roomId, last_heartbeat: Date.now() }
-      : { character: char.toLowerCase(), room_id: roomId, last_heartbeat: Date.now() };
+      : { character: char, room_id: roomId, last_heartbeat: Date.now() };
     await this.kv.set(registryKey(char), JSON.stringify(info));
     return info;
   }
@@ -74,7 +74,7 @@ export class HealerStore {
     const n = await this.kv.incr(COUNTER_KEY);
     const req: HealRequest = {
       request_id: `heal_${n}_${Date.now()}`,
-      character: char.toLowerCase(),
+      character: char,
       room_id: roomId,
       ...opts,
       ts: Date.now(),
@@ -103,7 +103,7 @@ export class HealerStore {
     const req = all.find((r) => r.request_id === requestId);
     if (req) {
       req.status = "accepted";
-      req.healer = healer.toLowerCase();
+      req.healer = healer;
       await this.kv.set(REQUESTS_KEY, JSON.stringify(all));
     }
   }

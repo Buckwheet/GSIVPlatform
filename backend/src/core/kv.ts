@@ -35,9 +35,11 @@ export class InMemoryKV implements KV {
   }
 
   async incr(key: string): Promise<number> {
-    const cur = Number((await this.get(key)) ?? 0) + 1;
-    await this.set(key, String(cur));
-    return cur;
+    this.prune();
+    const entry = this.store.get(key);
+    const next = (entry ? Number(entry.value) : 0) + 1;
+    this.store.set(key, { value: String(next), expiresAt: null });
+    return next;
   }
 
   async keys(pattern: string): Promise<string[]> {
