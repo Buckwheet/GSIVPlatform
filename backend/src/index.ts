@@ -7,6 +7,8 @@ import { createApp } from "./core/server.js";
 import { EventBus } from "./core/ws.js";
 import { createGemsModule } from "./modules/gems/index.js";
 import { GemsStore } from "./modules/gems/store.js";
+import { createHealerModule } from "./modules/healer/index.js";
+import { HealerStore } from "./modules/healer/store.js";
 import { healthModule } from "./modules/health/index.js";
 import { createInventoryModule } from "./modules/inventory/index.js";
 import { InventoryDbError, InventoryStore } from "./modules/inventory/store.js";
@@ -41,6 +43,10 @@ const kv = await createKV();
 // Gems (jar pipeline) is KV-backed operational state — always available.
 const gemsStore = new GemsStore(kv);
 registry.register(createGemsModule(gemsStore));
+
+// Healer service is KV-backed operational state — always available.
+const healerStore = new HealerStore(kv);
+registry.register(createHealerModule(healerStore));
 
 registry.validate();
 

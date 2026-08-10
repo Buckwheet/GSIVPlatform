@@ -61,3 +61,12 @@ delta, and a security_review pass before merge.
 - Queue join/done is a non-atomic KV read-modify-write (single-key JSON array). v1 used atomic Redis sorted sets; at this scale (one mule, a handful of characters) lost updates are an accepted, documented trade-off rather than a risk.
 - WS events emitted on the core EventBus: `jars_update`, `jars_claimed`, `queue_update` — server-authoritative state; REST remains the source of truth (per ws-data-pattern.md).
 - `full_jars` payloads pass through as published by the Lich jarrer (`{id, type, portions}`) — treated as opaque data, validated structurally.
+
+## Module: healer
+- Scopes: `healer.read` (status, requests, next), `healer.write` (register, heartbeat, request/accept/complete). All enforced by scopeGuard.
+- State is KV-backed operational data (`healer:registry:<char>`, `healer:requests`) — ephemeral like v1's in-memory Maps, but reboot-resilient; no SQL, no shell execution.
+- Healers are pruned when their heartbeat is >30s stale (on /status reads); the request list is capped at 50 (pruned on complete) — both faithful to v1.
+- Request creation/accept/complete is a non-atomic KV read-modify-write on `healer:requests` (single-key JSON array; same accepted trade-off as the gems module queues). request_id comes from `kv.incr`, which is atomic in both KV backends.
+- `request_id`s come from an atomic KV counter (`kv.incr`); char names lowercased for registry keys.
+- WS events emitted on the core EventBus: `healer_update`, `heal_request`, `heal_accepted`, `heal_complete` — server-authoritative; REST remains the source of truth.
+- `next/:healer` only exposes the oldest pending request whose room matches the healer's current room; request bodies are structurally validated.
