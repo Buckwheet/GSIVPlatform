@@ -36,7 +36,8 @@ require "yaml"
 account_name = ARGV[1]
 yaml_path = ARGV[2]
 data = YAML.load_file(yaml_path)
-enc = data["accounts"][account_name]["password"]
+account = (data["accounts"] || {}).find { |k, _| k.casecmp(account_name).zero? }
+enc = account && account[1]["password"]
 print Lich::Common::GUI::PasswordCipher.decrypt(enc, mode: :standard, account_name: account_name)
 `;
 

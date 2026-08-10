@@ -36,6 +36,7 @@ describe("Ruby capability", () => {
     const res = await r.decryptPassword("BUCKWHEET", "/opt/gs4sd/lich5/data/entry.yaml");
     expect(res).toEqual({ ok: true, plain: "PLAINTEXT" });
     expect(records[0].args[3]).toContain("YAML.load_file(yaml_path)");
+    expect(records[0].args[3]).toContain("k.casecmp(account_name).zero?");
     expect(records[0].args[3]).toContain("yaml_path = ARGV[2]");
     expect(records[0].args[5]).toBe("BUCKWHEET");
     expect(records[0].args[6]).toBe("/opt/gs4sd/lich5/data/entry.yaml");

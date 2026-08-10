@@ -115,6 +115,16 @@ const totpVerifyRoute = createRoute({
   },
 });
 
+const totpResetRoute = createRoute({
+  method: "post",
+  path: "/totp/reset",
+  request: { body: { content: { "application/json": { schema: z.object({ code: z.string() }) } } } },
+  responses: {
+    200: { content: { "application/json": { schema: okSchema } }, description: "reset" },
+    403: { description: "invalid code" },
+  },
+});
+
 const entryAccountBody = z.object({ account_name: z.string(), password: z.string(), totp_code: z.string() });
 const entryPasswordBody = z.object({ password: z.string(), totp_code: z.string() });
 const entryCharBody = z.object({ char_name: z.string(), game_code: z.string().optional(), totp_code: z.string() });
@@ -216,6 +226,7 @@ export function createAccountsModule(store: AccountsStore, totp: Totp): Module {
       "GET /totp/status": ["accounts.read"],
       "POST /totp/setup": ["accounts.write"],
       "POST /totp/verify": ["accounts.read"],
+      "POST /totp/reset": ["accounts.write"],
       "POST /entry/account": ["accounts.write"],
       "DELETE /entry/account/:name": ["accounts.write"],
       "PATCH /entry/account/:name/password": ["accounts.write"],
@@ -243,6 +254,11 @@ export function createAccountsModule(store: AccountsStore, totp: Totp): Module {
         return c.json({ secret, uri, qrDataUrl: await qrDataUrl }, 200);
       });
       router.openapi(totpVerifyRoute, async (c) => c.json({ valid: totp.verify(c.req.valid("json").code) }));
+      router.openapi(totpResetRoute, async (c) => {
+        if (!totp.verify(c.req.valid("json").code)) return c.json({ error: "invalid TOTP code" }, 403);
+        totp.reset();
+        return c.json({ ok: true }, 200);
+      });
 
       router.openapi(entryAddAccountRoute, async (c) => {
         const body = c.req.valid("json");
@@ -250,7 +266,7 @@ export function createAccountsModule(store: AccountsStore, totp: Totp): Module {
         if (err) return c.json({ error: err }, 403);
         if (!body.account_name || !body.password) return c.json({ error: "account_name and password required" }, 400);
         const res = await store.addAccount(body.account_name, body.password);
-        if (!res.ok) return c.json({ error: res.error }, 409);
+        if (!res.ok) return c.json({ error: res.error }, res.code === "exists" ? 409 : 500);
         return c.json({ ok: true }, 200);
       });
 
@@ -268,7 +284,7 @@ export function createAccountsModule(store: AccountsStore, totp: Totp): Module {
         if (err) return c.json({ error: err }, 403);
         if (!body.password) return c.json({ error: "password required" }, 400);
         const res = await store.updateAccountPassword(c.req.valid("param").name, body.password);
-        if (!res.ok) return c.json({ error: res.error }, 404);
+        if (!res.ok) return c.json({ error: res.error }, res.code === "encrypt" ? 500 : 404);
         return c.json({ ok: true }, 200);
       });
 

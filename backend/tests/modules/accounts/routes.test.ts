@@ -34,8 +34,8 @@ describe("accounts module routes", () => {
     rmSync(TMP, { recursive: true, force: true });
   });
 
-  function makeApp(tokensEnv: string) {
-    const ruby = new Ruby(async () => ({ stdout: "ENC:fake", stderr: "", code: 0 }));
+  function makeApp(tokensEnv: string, rubyOverride?: Ruby) {
+    const ruby = rubyOverride ?? new Ruby(async () => ({ stdout: "ENC:fake", stderr: "", code: 0 }));
     const sge = new Sge((_h, _p, _onData, onError) => {
       setImmediate(() => onError(new Error("no network")));
       return { write: () => {}, destroy: () => {} };
@@ -184,6 +184,36 @@ describe("accounts module routes", () => {
     await new Promise((r) => setTimeout(r, 50));
     const status = await app.request("/api/modules/accounts/accounts/scan/status", { headers: auth });
     expect(((await status.json()) as { running: boolean }).running).toBe(false);
+  });
+
+  it("totp/reset requires a valid code and clears the secret", async () => {
+    const app = makeApp("limited:tok:accounts.read,accounts.write");
+    const secret = await ensureSecret(app);
+    const bad = await post(app, "/api/modules/accounts/totp/reset", { code: "000000" });
+    expect(bad.status).toBe(403);
+    const ok = await post(app, "/api/modules/accounts/totp/reset", { code: currentCode(secret) });
+    expect(ok.status).toBe(200);
+    expect((await app.request("/api/modules/accounts/totp/status", { headers: auth })).json).toBeDefined();
+    const status = await app.request("/api/modules/accounts/totp/status", { headers: auth });
+    expect((await status.json()) as { setup: boolean }).toEqual({ setup: false });
+  });
+
+  it("maps a password-encryption failure to 500 (not 409)", async () => {
+    const failingRuby = new Ruby(async () => ({ stdout: "", stderr: "No such file", code: 1 }));
+    const app = makeApp("limited:tok:accounts.read,accounts.write", failingRuby);
+    const secret = await ensureSecret(app);
+    const res = await post(app, "/api/modules/accounts/entry/account", {
+      account_name: "NEWACCT",
+      password: "pw",
+      totp_code: currentCode(secret),
+    });
+    expect(res.status).toBe(500);
+    const missing = await post(app, "/api/modules/accounts/entry/account", {
+      account_name: "BUCKWHEET",
+      password: "pw",
+      totp_code: currentCode(secret),
+    });
+    expect(missing.status).toBe(500);
   });
 
   it("exposes accounts routes in OpenAPI spec", async () => {

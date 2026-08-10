@@ -194,21 +194,26 @@ export class AccountsStore {
   }
 
   /** Add an entry.yaml account (password encrypted via the Ruby capability). */
-  async addAccount(name: string, plainPassword: string): Promise<{ ok: boolean; error?: string; name?: string }> {
+  async addAccount(
+    name: string,
+    plainPassword: string,
+  ): Promise<{ ok: boolean; code?: "exists" | "encrypt" | "invalid"; error?: string; name?: string }> {
     const key = name.toUpperCase();
     const encrypted = await this.ruby.encryptPassword(key, plainPassword);
-    if (!encrypted.ok) return { ok: false, error: encrypted.error };
-    return this.yaml.addAccount(key, encrypted.encrypted);
+    if (!encrypted.ok) return { ok: false, code: "encrypt", error: encrypted.error };
+    const res = await this.yaml.addAccount(key, encrypted.encrypted);
+    if (!res.ok) return { ok: false, code: "exists", error: res.error };
+    return { ok: true, name: res.name };
   }
 
   /** Update an account password (encrypted via the Ruby capability). */
   async updateAccountPassword(
     name: string,
     plainPassword: string,
-  ): Promise<{ ok: boolean; error?: string; name?: string }> {
+  ): Promise<{ ok: boolean; code?: "encrypt"; error?: string; name?: string }> {
     const key = name.toUpperCase();
     const encrypted = await this.ruby.encryptPassword(key, plainPassword);
-    if (!encrypted.ok) return { ok: false, error: encrypted.error };
+    if (!encrypted.ok) return { ok: false, code: "encrypt", error: encrypted.error };
     return this.yaml.updatePassword(key, encrypted.encrypted);
   }
 
