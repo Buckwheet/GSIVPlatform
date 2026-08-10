@@ -1,0 +1,11 @@
+accounts:
+  Buckwheet:
+    characters:
+      - char_name: Fisternar
+        game_code: GSIV
+      - char_name: Zepherus
+        game_code: GSIV
+  alt:
+    characters:
+      - char_name: Neleourg
+        game_code: GSIV
