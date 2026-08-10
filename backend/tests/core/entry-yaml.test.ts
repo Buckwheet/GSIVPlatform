@@ -15,9 +15,9 @@ describe("EntryYaml capability", () => {
   it("parses the fixture into account/char_name/game_code rows", () => {
     const rows = new EntryYaml(FIXTURE).read();
     expect(rows).toEqual([
-      { account: "Buckwheet", char_name: "Fisternar", game_code: "GSIV" },
-      { account: "Buckwheet", char_name: "Zepherus", game_code: "GSIV" },
-      { account: "alt", char_name: "Neleourg", game_code: "GSIV" },
+      { account: "BUCKWHEET", char_name: "Fisternar", game_code: "GSIV" },
+      { account: "BUCKWHEET", char_name: "Zepherus", game_code: "GSIV" },
+      { account: "ALT", char_name: "Neleourg", game_code: "GSIV" },
     ]);
   });
 
