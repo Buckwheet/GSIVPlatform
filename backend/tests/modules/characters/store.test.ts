@@ -64,6 +64,28 @@ describe("CharactersStore", () => {
     expect(records).toHaveLength(2);
   });
 
+  it("start/restart use the canonical char_name regardless of caller casing", async () => {
+    const records: { cmd: string; args: string[] }[] = [];
+    const { store } = makeStore(async (cmd, args) => {
+      records.push({ cmd, args });
+      return { stdout: "", stderr: "", code: 0 };
+    });
+    await store.start("FiStErNaR");
+    await store.start("zepherus");
+    expect(records).toEqual([
+      { cmd: "systemctl", args: ["start", "gs4sd-lich@Fisternar.service"] },
+      { cmd: "systemctl", args: ["start", "gs4sd-lich@Zepherus.service"] },
+    ]);
+  });
+
+  it("stop does not unmanage when the systemctl action fails", async () => {
+    const { store } = makeStore(async () => ({ stdout: "", stderr: "Failed to stop", code: 1 }));
+    await store.seedManagedIfEmpty();
+    const res = await store.stop("fisternar");
+    expect(res).toEqual({ ok: false, error: "Failed to stop", was_managed: true });
+    expect(await store.managed()).toEqual(["fisternar", "zepherus", "neleourg"]);
+  });
+
   it("stop calls systemd and removes the char from managed (was_managed true)", async () => {
     const records: { cmd: string; args: string[] }[] = [];
     const { store } = makeStore(async (cmd, args) => {

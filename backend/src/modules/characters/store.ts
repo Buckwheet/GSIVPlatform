@@ -87,27 +87,35 @@ export class CharactersStore {
     if (!ch) return null;
     const managedSet = new Set(await this.managed());
     const status = await this.systemd.show(ch.char_name);
-    return { ...ch, managed: managedSet.has(ch.char_name), unit: this.systemd.unitFor(ch.char_name), ...status };
+    return {
+      ...ch,
+      managed: managedSet.has(ch.char_name.toLowerCase()),
+      unit: this.systemd.unitFor(ch.char_name),
+      ...status,
+    };
   }
 
   /** Start a headless Lich session; null when the char is unknown (route 404s). */
   async start(name: string): Promise<ActionResult | null> {
-    if (!this.known(name)) return null;
-    return this.systemd.action("start", name);
+    const ch = this.known(name);
+    if (!ch) return null;
+    return this.systemd.action("start", ch.char_name);
   }
 
-  /** Stop a session and remove it from managed so the watchdog won't restart it. */
+  /** Stop a session; unmanage (so the watchdog won't restart it) only when the stop succeeded. */
   async stop(name: string): Promise<ActionResult | null> {
-    if (!this.known(name)) return null;
-    const wasManaged = (await this.managed()).includes(name.toLowerCase());
-    if (wasManaged) await this.setManaged(name, false);
-    const res = await this.systemd.action("stop", name);
+    const ch = this.known(name);
+    if (!ch) return null;
+    const wasManaged = (await this.managed()).includes(ch.char_name.toLowerCase());
+    const res = await this.systemd.action("stop", ch.char_name);
+    if (res.ok && wasManaged) await this.setManaged(ch.char_name, false);
     return { ...res, was_managed: wasManaged };
   }
 
   /** Restart a headless Lich session; null when the char is unknown. */
   async restart(name: string): Promise<ActionResult | null> {
-    if (!this.known(name)) return null;
-    return this.systemd.action("restart", name);
+    const ch = this.known(name);
+    if (!ch) return null;
+    return this.systemd.action("restart", ch.char_name);
   }
 }

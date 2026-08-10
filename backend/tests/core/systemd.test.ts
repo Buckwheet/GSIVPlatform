@@ -73,3 +73,13 @@ describe("Systemd capability", () => {
     expect(st).toEqual({ active: false, sub: "dead", uptime: null });
   });
 });
+
+it("passes the 15s timeout to exec for actions", async () => {
+  const timeouts: number[] = [];
+  const exec: ExecFn = async (_cmd, _args, timeoutMs) => {
+    timeouts.push(timeoutMs);
+    return { stdout: "", stderr: "", code: 0 };
+  };
+  await new Systemd(exec, { sudoActions: false }).action("stop", "fisternar");
+  expect(timeouts).toEqual([15_000]);
+});
