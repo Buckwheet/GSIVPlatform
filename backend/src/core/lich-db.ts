@@ -34,6 +34,8 @@ uv = uv_blob ? Marshal.load(uv_blob) : {}
 cs = cs_blob ? Marshal.load(cs_blob) : {}
 out = {}
 %w[mapdb_car_to_sos mapdb_car_from_sos mapdb_use_portals mapdb_use_old_portals mapdb_use_urchins mapdb_use_portmasters mapdb_use_day_pass mapdb_buy_day_pass mapdb_ice_mode mapdb_fwi_trinket rogue_password mapdb_hinterwilds_location].each{|k| out[k] = uv[k]}
+portals = out['mapdb_use_portals']
+out['mapdb_use_portals'] = (portals == 'yes' ? true : (portals == 'no' ? false : portals))
 out['day_pass_sack'] = uv['day_pass_sack']
 %w[delay typeahead].each{|k| out[k] = cs[k]}
 out['stop_for_dead'] = cs['stop for dead']

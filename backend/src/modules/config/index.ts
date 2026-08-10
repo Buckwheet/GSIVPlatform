@@ -178,7 +178,11 @@ export function createConfigModule(lichDb: LichDb, configFiles: ConfigFiles): Mo
         const { files } = c.req.valid("json");
         const instance = c.req.valid("query").instance;
         const res = await configFiles.copyFrom(char, source, files, instance);
-        if (!res.ok) return c.json({ error: `source ${source} has no config` }, 404);
+        if (!res.ok)
+          return c.json(
+            { error: res.code === "invalid_char" ? "invalid character name" : `source ${source} has no config` },
+            res.code === "invalid_char" ? 400 : 404,
+          );
         return c.json({ ok: true, copied: res.copied }, 200);
       });
 

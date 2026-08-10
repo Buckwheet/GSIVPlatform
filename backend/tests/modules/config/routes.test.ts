@@ -121,6 +121,12 @@ describe("config module routes", () => {
     expect(await eherbs.json()).toEqual({ delay: 1, stock: 3 });
   });
 
+  it("maps an invalid character name to 400 on go2", async () => {
+    const app = makeApp("limited:tok:config.read,config.write");
+    const res = await app.request("/api/modules/config/go2/a%20b", { headers: auth });
+    expect(res.status).toBe(400);
+  });
+
   it("exposes config routes in OpenAPI spec", async () => {
     const app = makeApp("admin:tok:*");
     const res = await app.request("/api/spec", { headers: auth });
