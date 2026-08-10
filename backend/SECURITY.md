@@ -95,3 +95,10 @@ delta, and a security_review pass before merge.
 - Route path deviation vs v1: config file paths travel as `?path=` query (GET) / `{path, content}` body (PUT) instead of a path wildcard — router compatibility; same semantics.
 - No SQL prepared statements outside CoreDb; no eval, no shell strings; Ruby confined to core/lich-db.ts (and core/ruby.ts for PasswordCipher).
 - **Known trade-offs (v1-faithful):** one `LICH_DB_PATH` serves all instances (GSIV+GST share the db — v1 assumption, unverifiable on dev); `.bak.<ts>` backups accumulate unbounded (v1 behavior — rotation is a tracked follow-on); no symlink/realpath check or write payload cap (rate limit applies; v1 had neither). `mapdb_use_portals` GET now normalizes 'yes'/'no' back to boolean (round-trip fix vs v1).
+
+## Module: analysis (combat log analysis + upload + history)
+- Scopes: `analysis.read` (output/status/usage, history, game-log tail), `analysis.write` (kick scripts, upload logs). All enforced by scopeGuard.
+- **The AI itself runs in server-side shell scripts** (`run-analysis.sh`, `shiva-loop.sh` under `ANALYSIS_DATA_DIR`, default `/opt/gs4sd/data`) — the backend never talks to a provider. Executing them is confined to the review-gated `core/script-runner.ts`: a **fixed allowlist** of script paths, no arguments ever, args-array execFile, fire-and-forget (v1 unref semantics).
+- **Analysis/log dir IO is confined to `core/analysis-files.ts`** (`ANALYSIS_DATA_DIR`, `LICH_LOG_DIR`): reads output/status/usage/history files (missing → empty/[]); uploads are filename-sanitized `[A-Za-z0-9._-]`, `.log`-only, **size-capped 50 MB** (new vs v1), and character names strictly validated (v1 used the raw character as a path segment — a traversal risk); game-log tail is recursive under `LICH_LOG_DIR/GSIV-<Char>` with a 500-line cap and `<pushStream>`/`<popStream>` filtering.
+- `ANALYSIS_DATA_DIR`/`LICH_LOG_DIR` envs, never hardcoded in commits (defaults mirror v1).
+- Not ported: v1 `GET /api/logs` (event history — needs the logEvent core, a later item); the analysis shell scripts themselves should be reviewed server-side separately (they run as the service user).

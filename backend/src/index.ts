@@ -1,5 +1,6 @@
 import { dirname, join } from "node:path";
 import { serve } from "@hono/node-server";
+import { AnalysisFiles } from "./core/analysis-files.js";
 import { Auth } from "./core/auth.js";
 import { ConfigFiles } from "./core/config-files.js";
 import { CoreDb } from "./core/db.js";
@@ -8,6 +9,7 @@ import { createKV } from "./core/kv.js";
 import { LichDb } from "./core/lich-db.js";
 import { Registry } from "./core/registry.js";
 import { Ruby } from "./core/ruby.js";
+import { ScriptRunner } from "./core/script-runner.js";
 import { createApp } from "./core/server.js";
 import { Sge } from "./core/sge.js";
 import { Systemd } from "./core/systemd.js";
@@ -15,6 +17,7 @@ import { Totp } from "./core/totp.js";
 import { EventBus } from "./core/ws.js";
 import { createAccountsModule } from "./modules/accounts/index.js";
 import { AccountsStore } from "./modules/accounts/store.js";
+import { createAnalysisModule } from "./modules/analysis/index.js";
 import { createCharactersModule } from "./modules/characters/index.js";
 import { CharactersStore } from "./modules/characters/store.js";
 import { createConfigModule } from "./modules/config/index.js";
@@ -79,6 +82,13 @@ const configFiles = new ConfigFiles({
   gstDir: join(entryDir, "GST"),
 });
 registry.register(createConfigModule(new LichDb(), configFiles));
+
+// Analysis: data/log dirs + fixed server scripts via review-gated capabilities.
+const analysisFiles = new AnalysisFiles({
+  dataDir: process.env.ANALYSIS_DATA_DIR || "/opt/gs4sd/data",
+  logDir: process.env.LICH_LOG_DIR || "/opt/gs4sd/lich5/logs",
+});
+registry.register(createAnalysisModule(analysisFiles, new ScriptRunner()));
 
 registry.validate();
 const auth = new Auth(kv);
