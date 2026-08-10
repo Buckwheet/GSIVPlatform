@@ -101,7 +101,8 @@ export class AnalysisFiles {
     };
     walk(dir);
     if (!latest) return { ok: true, lines: [], file: null };
-    const count = Math.min(Math.max(Math.trunc(lines), 1), MAX_TAIL_LINES);
+    const n = Number(lines);
+    const count = Number.isFinite(n) ? Math.min(Math.max(Math.trunc(n), 1), MAX_TAIL_LINES) : 80;
     const content = readFileSync(latest, "utf-8");
     const tail = content
       .split("\n")

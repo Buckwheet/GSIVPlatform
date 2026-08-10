@@ -1,5 +1,5 @@
 import { createRoute, type OpenAPIHono, z } from "@hono/zod-openapi";
-import type { AnalysisFiles } from "../../core/analysis-files.js";
+import { type AnalysisFiles, MAX_UPLOAD_BYTES } from "../../core/analysis-files.js";
 import type { ScriptRunner } from "../../core/script-runner.js";
 import type { Module } from "../../core/types.js";
 
@@ -109,9 +109,15 @@ export function createAnalysisModule(analysisFiles: AnalysisFiles, runner: Scrip
         if (!file || typeof file === "string" || !(file instanceof File)) {
           return c.json({ error: "no file" }, 400);
         }
+        if (file.size > MAX_UPLOAD_BYTES) return c.json({ error: "file too large" }, 413);
         const buffer = Buffer.from(await file.arrayBuffer());
         const res = await analysisFiles.uploadLog(character, file.name, buffer);
-        if (!res.ok) return c.json({ error: "must be a .log file" }, 400);
+        if (!res.ok) {
+          return c.json(
+            { error: res.code === "too_large" ? "file too large" : "must be a .log file" },
+            res.code === "too_large" ? 413 : 400,
+          );
+        }
         return c.json({ ok: true, path: res.path, size: res.size }, 200);
       });
       router.openapi(gameLogRoute, async (c) => {

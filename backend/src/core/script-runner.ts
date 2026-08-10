@@ -23,12 +23,12 @@ const SCRIPTS: Record<AnalysisScript, string> = {
   "shiva-loop": "shiva-loop.sh",
 };
 
-const TIMEOUT_MS = 10_000;
 const DEFAULT_DATA_DIR = process.env.ANALYSIS_DATA_DIR || "/opt/gs4sd/data";
 
-function defaultExec(cmd: string, args: string[], timeoutMs: number): Promise<ExecResult> {
+function defaultExec(cmd: string): Promise<ExecResult> {
+  // No timeout and unref(): analysis scripts legitimately run for minutes (v1 unref semantics).
   return new Promise((resolve) => {
-    execFile(cmd, args, { timeout: timeoutMs }, (err, stdout, stderr) => {
+    const child = execFile(cmd, [], (err, stdout, stderr) => {
       if (err) {
         const code = typeof (err as { code?: unknown }).code === "number" ? (err as { code: number }).code : null;
         resolve({ stdout: String(stdout ?? ""), stderr: String(stderr ?? ""), code });
@@ -36,6 +36,7 @@ function defaultExec(cmd: string, args: string[], timeoutMs: number): Promise<Ex
         resolve({ stdout: String(stdout ?? ""), stderr: String(stderr ?? ""), code: 0 });
       }
     });
+    child.unref();
   });
 }
 
@@ -52,7 +53,7 @@ export class ScriptRunner {
     const path = join(this.opts.dataDir ?? DEFAULT_DATA_DIR, fileName);
     // Fire-and-forget: v1 spawned the script with unref() and returned immediately.
     // Errors are visible via the analysis status file, not the HTTP response.
-    void this.exec(path, [], TIMEOUT_MS);
+    void this.exec(path, [], 0);
     return { ok: true, message: `${script} started` };
   }
 }
