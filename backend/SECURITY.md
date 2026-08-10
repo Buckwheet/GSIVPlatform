@@ -53,3 +53,10 @@ delta, and a security_review pass before merge.
 - Scraper fetches public data from `https://shops.elanthia.online/data/removed_items.json` — no credentials; ETag cached in scrape_state to avoid redundant fetches. External host is rate-limited by the module-level limiter plus the operator's manual trigger cadence (no scheduled auto-scrape by default).
 - All SQL prepared statements; the only free-text input (`q` in /sales, gem_type in /gems/*) is bound via named parameters — LIKE wildcards are not escaped (matches v1 behavior; filter-only, not injection).
 - Pricing DB is a core service: open failure is fatal (server does not boot silently degraded, unlike optional inventory).
+
+## Module: gems (jar pipeline)
+- Scopes: `gems.read` (jar statuses, queue reads), `gems.write` (publish jar status, claim/clear, queue join/done). All enforced by scopeGuard.
+- State is KV-backed operational data (`gems:jars:*`, `gems:queue:*`) — ephemeral like v1's Redis, not durable records; no SQL, no shell execution.
+- Queues are FIFO by join order with dedupe (already-queued returns `position: "already_queued"`); char names are lowercased for storage and keys.
+- WS events emitted on the core EventBus: `jars_update`, `jars_claimed`, `queue_update` — server-authoritative state; REST remains the source of truth (per ws-data-pattern.md).
+- `full_jars` payloads pass through as published by the Lich jarrer (`{id, type, portions}`) — treated as opaque data, validated structurally.
