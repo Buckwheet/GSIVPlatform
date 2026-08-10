@@ -69,6 +69,16 @@ describe("AnalysisFiles capability", () => {
     }
   });
 
+  it("tailGameLog falls back to 80 lines for non-finite line counts", async () => {
+    writeFileSync(
+      join(LOGS, "GSIV-Fisternar", "many.log"),
+      Array.from({ length: 100 }, (_, i) => "line" + i).join("\n"),
+    );
+    const res = await af.tailGameLog("fisternar", Number.NaN);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.lines.length).toBeLessThanOrEqual(80);
+  });
+
   it("tailGameLog rejects invalid chars and returns file:null for unknowns", async () => {
     expect((await af.tailGameLog("../x", 5)).ok).toBe(false);
     const missing = await af.tailGameLog("Ghost");
