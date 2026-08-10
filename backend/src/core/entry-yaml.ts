@@ -52,7 +52,7 @@ function readDoc(path: string): YamlDoc {
 }
 
 export class EntryYaml {
-  constructor(private path: string = DEFAULT_PATH) {}
+  constructor(readonly path: string = DEFAULT_PATH) {}
 
   /** Parse entry.yaml into launchable characters. Throws on read/parse/validation failure. */
   read(): EntryChar[] {
