@@ -5,6 +5,8 @@ import { createKV } from "./core/kv.js";
 import { Registry } from "./core/registry.js";
 import { createApp } from "./core/server.js";
 import { EventBus } from "./core/ws.js";
+import { createGemsModule } from "./modules/gems/index.js";
+import { GemsStore } from "./modules/gems/store.js";
 import { healthModule } from "./modules/health/index.js";
 import { createInventoryModule } from "./modules/inventory/index.js";
 import { InventoryDbError, InventoryStore } from "./modules/inventory/store.js";
@@ -34,9 +36,14 @@ const pricingStore = new PricingStore(pricingDb);
 const pricingScraper = new PricingScraper(pricingStore);
 registry.register(createPricingModule(pricingStore, pricingScraper));
 
+const kv = await createKV();
+
+// Gems (jar pipeline) is KV-backed operational state — always available.
+const gemsStore = new GemsStore(kv);
+registry.register(createGemsModule(gemsStore));
+
 registry.validate();
 
-const kv = await createKV();
 const db = new CoreDb(process.env.DB_PATH || "data/gsiv.db");
 const auth = new Auth(kv);
 auth.loadFromEnv();
