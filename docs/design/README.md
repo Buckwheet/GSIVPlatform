@@ -45,3 +45,18 @@ All worker output goes in `docs/design/output/<topic>/` with a `README.md`
 index. Output is **design only** — no implementation code. If a worker writes
 code, it must be marked clearly as "reference implementation" and kept out of
 `backend/` and `frontend/` source trees.
+
+## Output status
+
+All four briefs have been executed by the design worker. Deliverables are in
+`docs/design/output/`:
+
+| Brief | Output dir | Files |
+|---|---|---|
+| 01 — Shell & Nav | `output/01-shell-and-nav/` | layout, routing, auth-flow, component-tree, nav-ia, game-view-ux, states + README |
+| 02 — Design System | `output/02-design-system/` | tokens.md, primitives.md, density.md, accessibility.md, tokens.css + README |
+| 03 — Module Pages | `output/03-module-pages/` | patterns, ws-data-pattern, scope-driven-ui, page-map + README |
+| 04 — Game View | `output/04-game-view/` | entry-points, deep-link-contract, states, flow + README |
+
+The design system (02) is the foundation — adopt `tokens.css` first when the
+React frontend starts.

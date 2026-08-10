@@ -1,0 +1,254 @@
+/**
+ * ============================================================================
+ * GSIVPlatform — Design System 02 · tokens.css
+ * Reference CSS custom-property set (design token layer).
+ *
+ * Status: REFERENCE ONLY — not wired into the app yet.
+ * Source: docs/design/2026-08-10-modular-platform-design.md + Brief 02.
+ * Palette: GSIVDashboard v1 frontend/style.css, ported verbatim.
+ * Companion docs: README.md · tokens.md · primitives.md · density.md · accessibility.md
+ *
+ * Layout of this file
+ *   1. Color — v1 palette (source of truth)
+ *   2. Color — sacred status (never remap)
+ *   3. Color — new neutral UI tokens (rationale in tokens.md §4)
+ *   4. Spacing · radius · type · z-index · shadow · motion
+ *   5. Component geometry
+ *   6. Density presets (comfortable / compact) + coarse-pointer safety
+ *   7. Reduced motion
+ *   8. Minimal base reference styles
+ * ============================================================================
+ */
+
+/* ---------------------------------------------------------------------------
+ * 1. COLOR — v1 palette (ported verbatim)
+ * ------------------------------------------------------------------------- */
+:root {
+  --bg: #14161b;
+  --panel: #1c1f26;
+  --border: #2a2e38;
+  --text: #d8dee9;
+  --muted: #808080;
+}
+
+/* ---------------------------------------------------------------------------
+ * 2. COLOR — sacred status (never remap; good==mind and bad==hp by meaning)
+ * ------------------------------------------------------------------------- */
+:root {
+  --hp: #ff4040;        /* hit points (resource bar)          */
+  --mana: #4090ff;      /* mana (resource bar)                */
+  --spirit: #c040ff;    /* spirit (resource bar)              */
+  --mind: #33dd33;      /* mind (resource bar)                */
+  --resource: #66d9ef;  /* generic resource pool              */
+  --good: #33dd33;      /* success / positive verdict         */
+  --bad: #ff4040;       /* failure / negative verdict / death */
+  --warn: #ffd633;      /* warning / attention                */
+}
+
+/* ---------------------------------------------------------------------------
+ * 3. COLOR — new neutral UI tokens (rationale in tokens.md §4)
+ * ------------------------------------------------------------------------- */
+:root {
+  --text-strong: #e6edf7;       /* headings / emphasis (15.4:1 on --bg)   */
+  --muted-strong: #a2aab8;      /* secondary text that passes AA on panels */
+  --panel-hover: #232833;       /* hover / raised / selected surfaces      */
+  --input-bg: #0f1116;          /* inset control fill                      */
+  --bar-track: #0d0f13;         /* v1 bar track                            */
+  --tooltip-bg: #0d0f13;        /* popover fill (same value as bar track)  */
+  --skeleton-bg: #262b35;       /* loading-placeholder fill                */
+  --border-strong: #3c4454;     /* emphasis border (hover on controls)     */
+  --border-control: #677086;    /* interactive boundary — ≥3:1 (WCAG 1.4.11) */
+  --overlay: rgba(8, 10, 13, 0.72); /* modal scrim                         */
+  --focus: #66d9ef;             /* keyboard focus ring (= --resource value) */
+
+  /* status tints (derived, for tinted badges / backgrounds) */
+  --tint-hp: color-mix(in srgb, var(--hp) 14%, var(--panel));
+  --tint-mana: color-mix(in srgb, var(--mana) 14%, var(--panel));
+  --tint-spirit: color-mix(in srgb, var(--spirit) 14%, var(--panel));
+  --tint-mind: color-mix(in srgb, var(--mind) 14%, var(--panel));
+  --tint-resource: color-mix(in srgb, var(--resource) 14%, var(--panel));
+  --tint-good: color-mix(in srgb, var(--good) 14%, var(--panel));
+  --tint-bad: color-mix(in srgb, var(--bad) 14%, var(--panel));
+  --tint-warn: color-mix(in srgb, var(--warn) 14%, var(--panel));
+}
+
+/* ---------------------------------------------------------------------------
+ * 4. SPACING · RADIUS · TYPE · Z · SHADOW · MOTION
+ * ------------------------------------------------------------------------- */
+:root {
+  /* --- spacing: 4px grid --- */
+  --space-0: 0;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 48px;
+  --space-9: 64px;
+
+  /* --- radius (v1 6–8px; bars 3px folded into --radius-xs) --- */
+  --radius-xs: 4px;        /* bar tracks, tiny chips            */
+  --radius-sm: 6px;        /* small controls, tooltips, badges  */
+  --radius-md: 8px;        /* panels, cards, buttons, inputs    */
+  --radius-full: 999px;    /* pills, status dots                */
+
+  /* --- type: monospace identity, 14px base, no secondary font --- */
+  --font-mono: "Consolas", "Monaco", "Menlo", "Lucida Console",
+               "DejaVu Sans Mono", monospace;
+  --font-size-xs: 11px;    /* floor for meaningful text */
+  --font-size-sm: 12px;
+  --font-size-md: 14px;    /* base (v1) */
+  --font-size-lg: 16px;
+  --font-size-xl: 18px;
+  --font-size-2xl: 22px;
+  --font-size-3xl: 28px;
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.65;
+  --font-weight-normal: 400;
+  --font-weight-bold: 700;
+  --letter-spacing-tight: -0.02em;
+  --letter-spacing-label: 0.08em;
+
+  /* --- z-index --- */
+  --z-sticky: 10;
+  --z-dropdown: 20;
+  --z-tooltip: 30;
+  --z-overlay: 40;
+  --z-modal: 50;
+  --z-toast: 60;
+
+  /* --- shadow / depth --- */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.30);
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.55);
+  --shadow-focus: 0 0 0 2px var(--bg), 0 0 0 4px var(--focus);
+  --shadow-inset: inset 0 1px 2px rgba(0, 0, 0, 0.40);
+
+  /* --- motion --- */
+  --duration-fast: 100ms;
+  --duration-normal: 200ms;
+  --duration-slow: 400ms;
+  --duration-bar: 500ms;            /* v1 bar fill: width 0.5s ease */
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-bar: cubic-bezier(0.25, 0.1, 0.25, 1); /* CSS `ease` (v1) */
+}
+
+/* ---------------------------------------------------------------------------
+ * 5. COMPONENT GEOMETRY (density-scaled below)
+ * ------------------------------------------------------------------------- */
+:root {
+  --dot-size: 8px;   /* status dots — never resize (v1) */
+  --bar-height: 10px; /* resource bars (comfortable)     */
+}
+
+/* ---------------------------------------------------------------------------
+ * 6. DENSITY PRESETS
+ * ------------------------------------------------------------------------- */
+:root,
+.gs-density-comfortable,
+[data-density="comfortable"] {
+  --density: comfortable;
+  --control-height: 40px;
+  --control-pad-x: 12px;
+  --control-pad-y: 8px;
+  --control-gap: 8px;
+  --table-row-pad-y: 10px;
+  --table-cell-pad-x: 12px;
+  --card-pad: 16px;
+  --card-gap: 16px;
+  --section-gap: 24px;
+  --stack-gap: 12px;
+  --tap-target-min: 44px;  /* WCAG 2.5.8 */
+  --bar-height: 10px;
+}
+
+/* Compact — desktop power users only (see coarse-pointer safety below) */
+.gs-density-compact,
+[data-density="compact"] {
+  --density: compact;
+  --control-height: 32px;
+  --control-pad-x: 8px;
+  --control-pad-y: 4px;
+  --control-gap: 6px;
+  --table-row-pad-y: 6px;
+  --table-cell-pad-x: 8px;
+  --card-pad: 12px;
+  --card-gap: 12px;
+  --section-gap: 16px;
+  --stack-gap: 8px;
+  --tap-target-min: 32px;
+  --bar-height: 8px;
+}
+
+/*
+ * Coarse-pointer safety (mandatory): compact assumes a precise pointer.
+ * On touch/pen devices the page always renders comfortable, regardless of
+ * the data-density attribute, so tap targets stay ≥44px (WCAG 2.5.8).
+ */
+@media (pointer: coarse) {
+  .gs-density-compact,
+  [data-density="compact"] {
+    --density: comfortable;
+    --control-height: 40px;
+    --control-pad-x: 12px;
+    --control-pad-y: 8px;
+    --control-gap: 8px;
+    --table-row-pad-y: 10px;
+    --table-cell-pad-x: 12px;
+    --card-pad: 16px;
+    --card-gap: 16px;
+    --section-gap: 24px;
+    --stack-gap: 12px;
+    --tap-target-min: 44px;
+    --bar-height: 10px;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * 7. REDUCED MOTION
+ * ------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+    --duration-normal: 0ms;
+    --duration-slow: 100ms;
+    --duration-bar: 0ms; /* bars jump to value; no fill animation */
+  }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * 8. MINIMAL BASE REFERENCE STYLES
+ * (informational — wire these when implementing the shell)
+ * ------------------------------------------------------------------------- */
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-md);
+  line-height: var(--leading-normal);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Keyboard focus: 2px ring, 2px gap. Use box-shadow: var(--shadow-focus)
+   instead inside elements that clip outlines. */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--focus) 35%, transparent);
+  color: var(--text-strong);
+}
