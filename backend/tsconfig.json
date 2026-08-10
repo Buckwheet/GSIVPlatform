@@ -7,9 +7,8 @@
     "verbatimModuleSyntax": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "outDir": "dist",
-    "rootDir": "src",
+    "noEmit": true,
     "types": ["node"]
   },
-  "include": ["src", "tests"]
+  "include": ["src", "tests", "vitest.config.ts"]
 }
