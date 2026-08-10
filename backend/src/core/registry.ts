@@ -13,6 +13,9 @@ export class Registry {
       if (existing.prefix === m.prefix) {
         throw new RegistryError(`duplicate prefix: ${m.prefix} (${m.name} vs ${existing.name})`);
       }
+      if (existing.prefix.startsWith(`${m.prefix}/`) || m.prefix.startsWith(`${existing.prefix}/`)) {
+        throw new RegistryError(`overlapping prefix: ${m.prefix} vs ${existing.prefix} (${m.name}/${existing.name})`);
+      }
     }
     this.modules.set(m.name, m);
   }

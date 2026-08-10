@@ -44,4 +44,9 @@ describe("Registry", () => {
     r.register(module({ routeScopes: {} }));
     expect(() => r.validate()).toThrow(/scope/i);
   });
+  it("rejects overlapping prefixes", () => {
+    const r = new Registry();
+    r.register(module({ name: "a", prefix: "/api/modules/a" }));
+    expect(() => r.register(module({ name: "b", prefix: "/api/modules/a/b" }))).toThrow(/overlap/i);
+  });
 });

@@ -35,12 +35,16 @@ function scopeGuard(m: import("./types.js").Module): MiddlewareHandler {
     if (user.scopes.includes("*")) return next();
     const rel = c.req.path.slice(m.prefix.length).split("?")[0];
     const method = c.req.method.toUpperCase();
+    // Prefer literal segments over :param patterns (most-specific match wins).
     let allowed: string[] | undefined;
+    let bestScore = -1;
     for (const [key, scopes] of Object.entries(m.routeScopes)) {
       const [kmethod, kpath] = key.split(" ");
-      if (kmethod === method && pathMatches(kpath, rel)) {
+      if (kmethod !== method || !pathMatches(kpath, rel)) continue;
+      const literalCount = kpath.split("/").filter((seg) => seg && !seg.startsWith(":")).length;
+      if (literalCount > bestScore) {
+        bestScore = literalCount;
         allowed = scopes;
-        break;
       }
     }
     if (!allowed) return c.json({ error: "forbidden", route: `${method} ${rel}` }, 403);
