@@ -40,3 +40,10 @@
 Every module plan MUST include: scopes declared and used, routeScopes coverage
 (so `scopeGuard` can enforce), rate-limit appropriateness, a `SECURITY.md`
 delta, and a security_review pass before merge.
+
+## Module: inventory (first feature module)
+- Read-only SQLite over the production `inv.db3` (opened `{ readonly: true }`).
+- Single scope `inventory.read` on all 7 GET routes (enforced by scopeGuard).
+- DB path from `INV_DB_PATH` env, never hardcoded in commits.
+- Server boots without inventory if the DB is missing (module skipped with a warning) — availability never depends on inv.db3.
+- No write queries, no shell execution.
