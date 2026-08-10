@@ -1,6 +1,7 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import type { Context, MiddlewareHandler, Next } from "hono";
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import type { Auth, AuthedUser } from "./auth.js";
 import type { CoreDb } from "./db.js";
 import type { KV } from "./kv.js";
@@ -62,6 +63,8 @@ export function createApp(deps: AppDeps): Hono {
   for (const m of deps.registry.list()) {
     const router = new OpenAPIHono();
     router.use("*", deps.auth.authMiddleware());
+    // Global request-body cap: bounds memory on multipart uploads and all bodies.
+    router.use("*", bodyLimit({ maxSize: 50 * 1024 * 1024 }));
     router.use(
       "*",
       rateLimit({ kv: deps.kv, windowMs: 60_000, max: 120, keyFn: (c) => (c.get("user") as { name: string }).name }),
