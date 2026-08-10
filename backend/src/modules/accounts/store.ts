@@ -193,6 +193,59 @@ export class AccountsStore {
       .run(accountName.toUpperCase(), charName).changes;
   }
 
+  /** Add an entry.yaml account (password encrypted via the Ruby capability). */
+  async addAccount(name: string, plainPassword: string): Promise<{ ok: boolean; error?: string; name?: string }> {
+    const key = name.toUpperCase();
+    const encrypted = await this.ruby.encryptPassword(key, plainPassword);
+    if (!encrypted.ok) return { ok: false, error: encrypted.error };
+    return this.yaml.addAccount(key, encrypted.encrypted);
+  }
+
+  /** Update an account password (encrypted via the Ruby capability). */
+  async updateAccountPassword(
+    name: string,
+    plainPassword: string,
+  ): Promise<{ ok: boolean; error?: string; name?: string }> {
+    const key = name.toUpperCase();
+    const encrypted = await this.ruby.encryptPassword(key, plainPassword);
+    if (!encrypted.ok) return { ok: false, error: encrypted.error };
+    return this.yaml.updatePassword(key, encrypted.encrypted);
+  }
+
+  /** Add a character to an entry.yaml account (Lich default fields). */
+  async addEntryCharacter(
+    accountName: string,
+    charName: string,
+    gameCode: string,
+  ): Promise<{ ok: boolean; error?: string }> {
+    return this.yaml.addCharacter(accountName.toUpperCase(), charName, gameCode || "GS3");
+  }
+
+  /** Delete an account: entry.yaml + scan db, with per-step results (v1 steps shape). */
+  async deleteAccountWithSteps(name: string): Promise<{ steps: { action: string; result: string }[] }> {
+    const key = name.toUpperCase();
+    const steps: { action: string; result: string }[] = [];
+    const y = this.yaml.deleteAccount(key);
+    steps.push({ action: `Remove ${key} from entry.yaml`, result: y.removed ? "ok" : "not found" });
+    await this.deleteAccount(key);
+    steps.push({ action: "Remove from dashboard database", result: "ok" });
+    return { steps };
+  }
+
+  /** Delete a character: entry.yaml + scan db, with per-step results. */
+  async deleteCharacterWithSteps(
+    accountName: string,
+    charName: string,
+  ): Promise<{ steps: { action: string; result: string }[] }> {
+    const key = accountName.toUpperCase();
+    const steps: { action: string; result: string }[] = [];
+    const y = this.yaml.deleteCharacter(key, charName);
+    steps.push({ action: `Remove ${charName} from entry.yaml`, result: y.removed ? "ok" : "not found" });
+    const dbRemoved = (await this.deleteCharacter(key, charName)) > 0;
+    steps.push({ action: "Remove from dashboard database", result: dbRemoved ? "ok" : "not found" });
+    return { steps };
+  }
+
   private yamlOnlyChars(accountName: string, chars: { char_name: string; game_code: string }[]): ScanCharacterRow[] {
     return chars.map((c) => ({
       account_name: accountName,
