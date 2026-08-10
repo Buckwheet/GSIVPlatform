@@ -28,7 +28,7 @@ describe("CharactersStore", () => {
     const rows = await store.list();
     expect(rows).toHaveLength(3);
     expect(rows[0]).toEqual({
-      account: "Buckwheet",
+      account: "BUCKWHEET",
       char_name: "Fisternar",
       game_code: "GSIV",
       managed: true,

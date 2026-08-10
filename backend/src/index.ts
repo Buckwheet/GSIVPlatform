@@ -4,9 +4,14 @@ import { CoreDb } from "./core/db.js";
 import { EntryYaml } from "./core/entry-yaml.js";
 import { createKV } from "./core/kv.js";
 import { Registry } from "./core/registry.js";
+import { Ruby } from "./core/ruby.js";
 import { createApp } from "./core/server.js";
+import { Sge } from "./core/sge.js";
 import { Systemd } from "./core/systemd.js";
+import { Totp } from "./core/totp.js";
 import { EventBus } from "./core/ws.js";
+import { createAccountsModule } from "./modules/accounts/index.js";
+import { AccountsStore } from "./modules/accounts/store.js";
 import { createCharactersModule } from "./modules/characters/index.js";
 import { CharactersStore } from "./modules/characters/store.js";
 import { createGemsModule } from "./modules/gems/index.js";
@@ -57,9 +62,13 @@ const charactersStore = new CharactersStore(kv, new EntryYaml(), new Systemd());
 await charactersStore.seedManagedIfEmpty();
 registry.register(createCharactersModule(charactersStore));
 
-registry.validate();
-
+// Accounts: TOTP-gated entry.yaml mgmt + SGE scan via review-gated capabilities.
 const db = new CoreDb(process.env.DB_PATH || "data/gsiv.db");
+const accountsStore = new AccountsStore(db, new EntryYaml(), new Ruby(), new Sge());
+const totp = new Totp();
+registry.register(createAccountsModule(accountsStore, totp));
+
+registry.validate();
 const auth = new Auth(kv);
 auth.loadFromEnv();
 const eventBus = new EventBus();

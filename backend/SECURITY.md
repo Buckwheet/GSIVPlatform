@@ -78,3 +78,12 @@ delta, and a security_review pass before merge.
 - Managed list is KV-backed (`characters:managed`, lowercased names), seeded once at boot from entry.yaml. Deviation from v1: `stop` removes the char from managed ONLY when the systemctl stop succeeded (v1 unmanaged even on failure, which could orphan a still-running session).
 - start/stop/restart 404 on unknown characters (only launchable entry.yaml chars have units) — stricter than v1.
 - No invdb/account-scan enrichment yet (needs the accounts module; cross-module imports are forbidden) — lands with Phase A #4.
+
+## Module: accounts (accounts + entry, TOTP-gated)
+- Scopes: `accounts.read` (accounts/scan status/totp status/verify), `accounts.write` (scan, entry.yaml mutations, TOTP setup). All enforced by scopeGuard.
+- **TOTP gate:** every entry.yaml mutation (add/delete account, password change, add/delete character) requires a valid TOTP code from `core/totp.ts` (secret file mode 0600, window-1 verify, `TOTP_SECRET_PATH` env). v1 error strings preserved. `/totp/verify` is a rate-limited oracle; `/totp/reset` is code-gated (v1-faithful: re-enrollment requires holding the current secret; a lost secret needs operator file deletion).
+- **Credentials:** account passwords are encrypted with Lich PasswordCipher via the review-gated `core/ruby.ts` (fixed Ruby templates + ARGV — no user input interpolated into scripts, an injection fix vs v1). Decryption happens only inside `core/ruby.ts` for the scan; plaintext passwords are never logged and never appear in responses; they travel to the API over TLS in prod (v1-faithful).
+- **entry.yaml writes** go through the extended `core/entry-yaml.ts` (backup-then-write `.bak.<ts>`; account/char names validated with the strict regex).
+- **Scan:** SGE auth + active character list via `core/sge.ts` (TLS, injectable transport); scan results persist in CoreDb (`accounts`, `account_characters` migrations). Scan-all runs in the background with a process-local lock and 30s spacing between accounts (injectable for tests). playdotnet inactive-char + store-balance scraping is a tracked follow-on (plan Task 9) — not yet ported.
+- `TOTP_SECRET_PATH` / `ENTRY_YAML_PATH` envs, never hardcoded in commits.
+- **Known trade-offs (v1/Lich-faithful, server-only):** the plaintext password is passed to Ruby via ARGV (briefly visible in the process list during encrypt/decrypt — v1 behavior; stdin-passing is a tracked follow-on); the SGE TLS socket uses `rejectUnauthorized: false` (v1 + Lich do the same for eaccess.play.net).
