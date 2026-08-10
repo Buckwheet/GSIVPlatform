@@ -70,3 +70,11 @@ delta, and a security_review pass before merge.
 - `request_id`s come from an atomic KV counter (`kv.incr`); char names lowercased for registry keys.
 - WS events emitted on the core EventBus: `healer_update`, `heal_request`, `heal_accepted`, `heal_complete` — server-authoritative; REST remains the source of truth.
 - `next/:healer` only exposes the oldest pending request whose room matches the healer's current room; request bodies are structurally validated.
+
+## Module: characters (managed + systemd)
+- Scopes: `characters.read` (list + status), `characters.write` (start/stop/restart). All enforced by scopeGuard.
+- **Shell execution is confined to the review-gated core capability `core/systemd.ts`** — the only place `child_process.execFile` is used. It allowlists actions (`start`/`stop`/`restart`/`show`, fail-closed otherwise), strictly validates character names before deriving units (`gs4sd-lich@<Name>.service`), and always calls execFile with an **args array** (never a shell string) + timeout. Routes never build unit strings.
+- **entry.yaml access is confined to `core/entry-yaml.ts`** (parse-only via the `yaml` package, no eval); each `char_name` is validated against the same strict regex. `ENTRY_YAML_PATH` env, default `/opt/gs4sd/lich5/data/entry.yaml` — never hardcoded in commits.
+- Managed list is KV-backed (`characters:managed`, lowercased names), seeded once at boot from entry.yaml. Deviation from v1: `stop` removes the char from managed ONLY when the systemctl stop succeeded (v1 unmanaged even on failure, which could orphan a still-running session).
+- start/stop/restart 404 on unknown characters (only launchable entry.yaml chars have units) — stricter than v1.
+- No invdb/account-scan enrichment yet (needs the accounts module; cross-module imports are forbidden) — lands with Phase A #4.
