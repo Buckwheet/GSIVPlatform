@@ -1,10 +1,14 @@
 import { serve } from "@hono/node-server";
 import { Auth } from "./core/auth.js";
 import { CoreDb } from "./core/db.js";
+import { EntryYaml } from "./core/entry-yaml.js";
 import { createKV } from "./core/kv.js";
 import { Registry } from "./core/registry.js";
 import { createApp } from "./core/server.js";
+import { Systemd } from "./core/systemd.js";
 import { EventBus } from "./core/ws.js";
+import { createCharactersModule } from "./modules/characters/index.js";
+import { CharactersStore } from "./modules/characters/store.js";
 import { createGemsModule } from "./modules/gems/index.js";
 import { GemsStore } from "./modules/gems/store.js";
 import { createHealerModule } from "./modules/healer/index.js";
@@ -47,6 +51,11 @@ registry.register(createGemsModule(gemsStore));
 // Healer service is KV-backed operational state — always available.
 const healerStore = new HealerStore(kv);
 registry.register(createHealerModule(healerStore));
+
+// Characters: entry.yaml + systemd control go through the review-gated core capabilities.
+const charactersStore = new CharactersStore(kv, new EntryYaml(), new Systemd());
+await charactersStore.seedManagedIfEmpty();
+registry.register(createCharactersModule(charactersStore));
 
 registry.validate();
 
