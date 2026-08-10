@@ -58,5 +58,6 @@ delta, and a security_review pass before merge.
 - Scopes: `gems.read` (jar statuses, queue reads), `gems.write` (publish jar status, claim/clear, queue join/done). All enforced by scopeGuard.
 - State is KV-backed operational data (`gems:jars:*`, `gems:queue:*`) — ephemeral like v1's Redis, not durable records; no SQL, no shell execution.
 - Queues are FIFO by join order with dedupe (already-queued returns `position: "already_queued"`); char names are lowercased for storage and keys.
+- Queue join/done is a non-atomic KV read-modify-write (single-key JSON array). v1 used atomic Redis sorted sets; at this scale (one mule, a handful of characters) lost updates are an accepted, documented trade-off rather than a risk.
 - WS events emitted on the core EventBus: `jars_update`, `jars_claimed`, `queue_update` — server-authoritative state; REST remains the source of truth (per ws-data-pattern.md).
 - `full_jars` payloads pass through as published by the Lich jarrer (`{id, type, portions}`) — treated as opaque data, validated structurally.
