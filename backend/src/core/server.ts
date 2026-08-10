@@ -60,6 +60,11 @@ export function createApp(deps: AppDeps): Hono {
 
   app.get("/health", (c) => c.json({ status: "ok", ts: Date.now() }));
 
+  // Identity: the authenticated token's name + scopes (drives frontend scope gating).
+  app.get("/api/me", deps.auth.authMiddleware(), (c: Context<{ Variables: { user: AuthedUser } }>) =>
+    c.json({ name: c.get("user").name, scopes: c.get("user").scopes }),
+  );
+
   for (const m of deps.registry.list()) {
     const router = new OpenAPIHono();
     router.use("*", deps.auth.authMiddleware());

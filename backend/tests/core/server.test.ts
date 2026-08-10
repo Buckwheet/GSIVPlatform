@@ -32,3 +32,20 @@ describe("createApp", () => {
     expect((await spec.json()).paths["/api/modules/health/status"]).toBeDefined();
   });
 });
+
+describe("identity endpoint", () => {
+  it("/api/me returns the token name and scopes", async () => {
+    const db = new CoreDb(":memory:");
+    const registry = new Registry();
+    registry.register(healthModule);
+    registry.validate();
+    const auth = new Auth(new InMemoryKV());
+    auth.loadFromEnv("limited:tok:gems.read");
+    const app = createApp({ registry, kv: new InMemoryKV(), db, auth, eventBus: new EventBus() });
+
+    const res = await app.request("/api/me", { headers: { Authorization: "Bearer tok" } });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ name: "limited", scopes: ["gems.read"] });
+    expect((await app.request("/api/me")).status).toBe(401);
+  });
+});
