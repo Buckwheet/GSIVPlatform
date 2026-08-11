@@ -11,12 +11,19 @@ export default function Characters({ auth }: { auth: AuthState }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
+  const [streams, setStreams] = useState<Record<string, { url: string; up: boolean }>>({});
+  const canWatch = can(auth, ["gameview.read"]);
   const { addToast } = useToast();
   const write = can(auth, ["characters.write"]);
 
   async function refresh() {
     try {
-      setRows(await api<CharacterRow[]>("/modules/characters/characters", auth));
+      const [chars, streamMap] = await Promise.all([
+        api<CharacterRow[]>("/modules/characters/characters", auth),
+        canWatch ? api<Record<string, { url: string; up: boolean }>>("/modules/gameview/streams", auth) : Promise.resolve({}),
+      ]);
+      setRows(chars);
+      setStreams(streamMap);
       setError(null);
     } catch (err) {
       setError((err as Error).message);
@@ -80,6 +87,25 @@ export default function Characters({ auth }: { auth: AuthState }) {
       header: "Managed",
       sortable: true,
       render: (r: CharacterRow) => (r.managed ? "yes" : "no"),
+    },
+    {
+      key: "watch",
+      header: "Stream",
+      render: (r: CharacterRow) => {
+        const stream = streams[r.char_name];
+        if (!stream?.up) return <span className="muted">—</span>;
+        return (
+          <a
+            className="gs-btn gs-btn--ghost gs-btn--sm"
+            href={stream.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`Open live stream for ${r.char_name}`}
+          >
+            Watch
+          </a>
+        );
+      },
     },
     ...(write
       ? [

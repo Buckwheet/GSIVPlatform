@@ -5,6 +5,7 @@ import { createAccountsModule } from "../../src/modules/accounts/index.js";
 import { createAnalysisModule } from "../../src/modules/analysis/index.js";
 import { createCharactersModule } from "../../src/modules/characters/index.js";
 import { createConfigModule } from "../../src/modules/config/index.js";
+import { createGameviewModule } from "../../src/modules/gameview/index.js";
 import { createGemsModule } from "../../src/modules/gems/index.js";
 import { createHealerModule } from "../../src/modules/healer/index.js";
 import { healthModule } from "../../src/modules/health/index.js";
@@ -17,6 +18,7 @@ function fullRegistry(): Registry {
   const registry = new Registry();
   registry.register(healthModule);
   registry.register(createLogsModule(undefined as never));
+  registry.register(createGameviewModule({}));
   registry.register(createInventoryModule(undefined as never));
   registry.register(createPricingModule(undefined as never, undefined as never));
   registry.register(createGemsModule(undefined as never));
