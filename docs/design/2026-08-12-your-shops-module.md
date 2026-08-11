@@ -37,6 +37,8 @@ Non-goals (v1 of this module):
   **machine token** (`AUTH_TOKENS` abdb…, pricing + your-shops scopes):
   1. `POST /api/modules/pricing/scrape` — incremental pull of `removed_items.json` (ETag).
   2. `POST /api/modules/your-shops/scan` — detect new sales for configured shops, persist, emit.
+- **The machine token needs `yourshops.read+write` scopes added** to its `AUTH_TOKENS` entry
+  in the server `.env` (currently gems/healer/characters/pricing/lich).
 - **Disable** `gs4-sales-scraper.timer` (v1 collection stops; v1 db freezes as archive).
 - Idempotent: both calls are safe to run hourly; failures just mean an empty scan that hour.
 
@@ -67,8 +69,11 @@ Non-goals (v1 of this module):
 
 - Query pricing `sales` for `shop IN (your shops)` with `removed_date > last seen`; insert
   notifications for rows not in `seen`; insert into `seen`; emit one `sale_update` WS event per
-  scan (payload: new-sale summary). On first run, history is marked `seen` without alerting —
+  scan (payload: new-sale summary; the frontend then re-fetches `GET /notifications` to refresh
+  the badge + list — the WS event is the wake-up, the fetch is the truth). On first run, history is marked `seen` without alerting —
   no spam from the 273 existing sales. Dedup by `item_id` (matches pricing UNIQUE(item_id)).
+  Detection = pricing rows for your shops whose `item_id` is not in `seen` and
+  `removed_date > max(seen.removed_date)` (bounded query).
 
 ### 4.4 WS
 
