@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { Sge, type SgeConnect } from "../../src/core/sge.js";
+import { matchesPinnedCert, Sge, type SgeConnect } from "../../src/core/sge.js";
 
 function scriptedConnect(chunks: string[], onWrite?: (d: Buffer | string) => void): SgeConnect {
   let i = 0;
@@ -78,5 +78,27 @@ describe("Sge capability", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("SGE cert pinning", () => {
+  it("accepts the pinned Simutronics certificate fingerprint", () => {
+    expect(
+      matchesPinnedCert({
+        fingerprint256:
+          "10:B7:37:E6:61:98:7D:15:BC:5C:82:45:E3:F8:B7:82:91:D4:1E:D8:AB:C7:66:72:EC:B0:2F:E7:8E:D0:21:8A",
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects any other certificate (MITM)", () => {
+    expect(
+      matchesPinnedCert({
+        fingerprint256:
+          "AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99",
+      }),
+    ).toBe(false);
+    expect(matchesPinnedCert(undefined)).toBe(false);
+    expect(matchesPinnedCert(null)).toBe(false);
   });
 });

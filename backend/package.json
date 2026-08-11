@@ -18,7 +18,7 @@
     "gen:manifest": "tsx scripts/gen-frontend-manifest.ts"
   },
   "dependencies": {
-    "@hono/node-server": "^1.13.0",
+    "@hono/node-server": "^2.1.0",
     "@hono/zod-openapi": "^0.18.4",
     "better-sqlite3": "^12.2.0",
     "hono": "^4.6.14",

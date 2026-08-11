@@ -10,6 +10,16 @@ import type { EventBus } from "./ws.js";
 // WebSocket headers). Subscribes to the module event contract below.
 // ---------------------------------------------------------------------------
 
+// Same-origin guard for WebSocket connections (browsers always send Origin).
+// Blocks cross-site WebSocket hijacking and DNS-rebinding. Non-browser clients
+// (no Origin header) still must pass token auth.
+const ALLOWED_ORIGINS = new Set(["https://gsiv.phylactery.ovh", "http://localhost:5173", "http://127.0.0.1:5173"]);
+
+export function isAllowedOrigin(origin: string | undefined): boolean {
+  if (origin === undefined) return true; // non-browser client — token auth still applies
+  return ALLOWED_ORIGINS.has(origin);
+}
+
 const EVENT_TYPES = [
   "jars_update",
   "jars_claimed",
@@ -26,6 +36,10 @@ export function createWsBridge(server: ServerType, auth: Auth, eventBus: EventBu
   const unsubs: (() => void)[] = [];
 
   wss.on("connection", (ws, req) => {
+    if (!isAllowedOrigin(req.headers.origin)) {
+      ws.close(4403, "forbidden origin");
+      return;
+    }
     const url = new URL(req.url ?? "/", "http://localhost");
     const token = url.searchParams.get("token") ?? null;
     void auth.verify(token).then((user) => {

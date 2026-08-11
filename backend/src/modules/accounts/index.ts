@@ -1,4 +1,6 @@
 import { createRoute, type OpenAPIHono, z } from "@hono/zod-openapi";
+import type { CoreDb } from "../../core/db.js";
+import { EventLog } from "../../core/event-log.js";
 import type { Totp } from "../../core/totp.js";
 import type { Module } from "../../core/types.js";
 import type { AccountsStore } from "./store.js";
@@ -235,6 +237,9 @@ export function createAccountsModule(store: AccountsStore, totp: Totp): Module {
       "DELETE /entry/account/:name/character/:char": ["accounts.write"],
     },
     registerRoutes(router: OpenAPIHono, _deps: unknown): void {
+      // spec building calls registerRoutes with empty deps — logging is optional there
+      const db = (_deps as { db?: CoreDb }).db;
+      const eventLog = db ? new EventLog(db) : null;
       router.openapi(accountsRoute, async (c) => c.json(await store.list()));
       router.openapi(scanStatusRoute, async (c) => c.json({ running: store.scanRunning() }));
       router.openapi(scanAllRoute, async (c) => {
@@ -252,12 +257,14 @@ export function createAccountsModule(store: AccountsStore, totp: Totp): Module {
       router.openapi(totpSetupRoute, async (c) => {
         if (totp.isSetup()) return c.json({ error: "already setup — reset first" }, 400);
         const { secret, uri, qrDataUrl } = totp.setup();
+        eventLog?.log("totp_setup", null, "TOTP enrollment created", "api");
         return c.json({ secret, uri, qrDataUrl: await qrDataUrl }, 200);
       });
       router.openapi(totpVerifyRoute, async (c) => c.json({ valid: totp.verify(c.req.valid("json").code) }));
       router.openapi(totpResetRoute, async (c) => {
         if (!totp.verify(c.req.valid("json").code)) return c.json({ error: "invalid TOTP code" }, 403);
         totp.reset();
+        eventLog?.log("totp_reset", null, "TOTP reset", "api");
         return c.json({ ok: true }, 200);
       });
 
