@@ -65,6 +65,10 @@ const streamsRoute = createRoute({
 
 export function createGameviewModule(opts: {
   baseUrl?: string;
+  /** Zone for per-char stream hosts (one level, e.g. phylactery.ovh — Cloudflare
+   *  Universal SSL only covers one wildcard level, so char hosts live at
+   *  <char>.<streamDomain>, NOT <char>.<sub>.streamDomain). */
+  streamDomain?: string;
   streams?: string;
   /** VellumFE pairing token (shared data dir). Auto-pairs the web UI on load. */
   token?: string;
@@ -83,13 +87,13 @@ export function createGameviewModule(opts: {
         const out: Record<string, { url: string; up: boolean }> = {};
         for (const [char, { detach, web }] of Object.entries(streams)) {
           const frag = opts.token ? `token=${opts.token}&` : "";
-          // Per-character hostname: the browser sends the Host header (unlike the
-          // URL fragment), so Caddy routes each char to its own vellum instance.
-          // The fragment only prefills the web UI's Lich-attach form.
-          const host = new URL(base);
-          host.hostname = `${char.toLowerCase()}.${host.hostname}`;
-          const origin = host.toString().endsWith("/") ? host.toString().slice(0, -1) : host.toString();
-          const url = `${origin}/play#${frag}rhost=127.0.0.1&rport=${detach}`;
+          // One-level char host (<char>.<streamDomain>): the browser sends the
+          // Host header (unlike the URL fragment), so Caddy routes each char to
+          // its own vellum instance; the fragment only prefills the attach form.
+          const host = opts.streamDomain
+            ? `${char.toLowerCase()}.${opts.streamDomain}`
+            : base.slice(base.indexOf("://") + 3);
+          const url = `https://${host}/play#${frag}rhost=127.0.0.1&rport=${detach}`;
           out[char] = { url, up: await probe(web) };
         }
         return c.json(out);
