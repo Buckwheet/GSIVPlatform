@@ -1,0 +1,11 @@
+[Unit]
+Description=GSIV v2 Sales Scan (pricing scrape + your-shops scan)
+After=network-online.target gsiv-platform.service
+Wants=gsiv-platform.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+# Token lives on the server (not in git): /etc/gsiv-sales-scan.env (0600), GS4SD_TOKEN=...
+EnvironmentFile=/etc/gsiv-sales-scan.env
+ExecStart=/opt/gsiv-platform/scripts/gsiv-sales-scan.sh
