@@ -63,7 +63,13 @@ const streamsRoute = createRoute({
   },
 });
 
-export function createGameviewModule(opts: { baseUrl?: string; streams?: string; probe?: StreamProbe }): Module {
+export function createGameviewModule(opts: {
+  baseUrl?: string;
+  streams?: string;
+  /** VellumFE pairing token (shared data dir). Auto-pairs the web UI on load. */
+  token?: string;
+  probe?: StreamProbe;
+}): Module {
   return {
     name: "gameview",
     prefix: "/api/modules/gameview",
@@ -76,7 +82,8 @@ export function createGameviewModule(opts: { baseUrl?: string; streams?: string;
         const streams = parseStreams(opts.streams);
         const out: Record<string, { url: string; up: boolean }> = {};
         for (const [char, { detach, web }] of Object.entries(streams)) {
-          const url = `${base}/play#rhost=127.0.0.1&rport=${detach}`;
+          const frag = opts.token ? `token=${opts.token}&` : "";
+          const url = `${base}/play#${frag}rhost=127.0.0.1&rport=${detach}`;
           out[char] = { url, up: await probe(web) };
         }
         return c.json(out);

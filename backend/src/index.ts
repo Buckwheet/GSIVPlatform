@@ -77,7 +77,13 @@ registry.register(createCharactersModule(charactersStore));
 const db = new CoreDb(process.env.DB_PATH || "data/gsiv.db");
 const eventLog = new EventLog(db);
 registry.register(createLogsModule(eventLog));
-registry.register(createGameviewModule({ baseUrl: process.env.VELLUM_BASE_URL, streams: process.env.VELLUM_STREAMS }));
+registry.register(
+  createGameviewModule({
+    baseUrl: process.env.VELLUM_BASE_URL,
+    streams: process.env.VELLUM_STREAMS,
+    token: process.env.VELLUM_TOKEN,
+  }),
+);
 const accountsStore = new AccountsStore(db, new EntryYaml(), new Ruby(), new Sge());
 const totp = new Totp();
 registry.register(createAccountsModule(accountsStore, totp));
