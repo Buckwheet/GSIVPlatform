@@ -4,8 +4,9 @@
 > single source of truth for where the project stands, what to do next, and
 > how to work here.
 
-**Updated:** 2026-08-11 — Phase A + B complete, **Phase C deployed**: all 9 modules +
-frontend live on prod :3102, Caddy site wired. See §7 for the session handoff.
+**Updated:** 2026-08-11 EOD — Phase A + B complete, **Phase C live** (9 modules + frontend on
+`gsiv.phylactery.ovh`), pricing imported, hardening + full security audit done.
+See §7 for the session handoff.
 
 ---
 
@@ -27,7 +28,7 @@ as the `pricing` module.
 - Agent onboarding: `AGENTS.md` (read by Antigravity/Gemini too)
 - Frontend design handoff (Gemini): `docs/design/2026-08-10-frontend-handoff.md`
 
-## 2. Current state (verified 2026-08-11)
+## 2. Current state (verified 2026-08-11 EOD)
 
 | Area | State |
 |---|---|
@@ -40,7 +41,7 @@ as the `pricing` module.
 | Design | All 4 briefs executed → `docs/design/output/`; frontend adopted tokens + primitives |
 
 **Merged 2026-08-10:** PRs #4–#13 (modules, frontend foundation, WS, endpoint fixes, Gemini design restyle).
-**Merged 2026-08-11:** PR #14 registry-driven manifest (backend `Module.nav` → `frontend/src/generated/modules.json`, generated nav/routes, 8 tests), PR #15 polish (loading states, density toggle, a11y, backend Biome lint clean). main @ `2788b26`.
+**Merged 2026-08-11:** #14 manifest, #15 polish, #16 docs, #17 nav-lazy fix, #18 pricing import, #19 hardening, #20 event log, #21 boot-event fix, #22 audit fixes (SGE pin, WS origin, TOTP events, node-server 2.x). main @ `3e3f3d4`.
 
 ## 3. How to work here (mandatory)
 
@@ -62,11 +63,12 @@ as the `pricing` module.
 - Design polish — DONE (PR #15): loading states on all fetch pages, density toggle (topbar, persisted, coarse-pointer-safe), a11y; backend Biome lint fully clean.
 - Game View: link to VellumFE headless on server, deep-link only (`04-game-view`) — pending (config/deploy item).
 
-### Phase C — deploy-phase (mostly done; `deploy/V2-DEPLOYMENT.md`)
-- **Redeploy v2** — DONE 2026-08-11: all 9 modules + frontend live on :3102 (was 3 modules before).
-- Expose via Caddy — DONE: `gsiv.phylactery.ovh` site block applied + verified via Host header. **Needs one Cloudflare A record `gsiv → 51.68.235.144` (proxied, like the other subdomains) to go public.**
-- Pricing data import from old sales-tracker DB (`/opt/sales-tracker/data/sales.db`) — pending.
-- Lich URL migrations to `/api/modules/*` (jar seller, healer, characters watchdog, config, accounts) + retire v1 (port 3100) — pending.
+### Phase C — deploy-phase (`deploy/V2-DEPLOYMENT.md`)
+- **Redeploy v2** — DONE 2026-08-11: all 9 modules + frontend live, **DNS added, site public**.
+- **Pricing data import** — DONE: 16,775 sales + 8 listings imported (`backend/scripts/import-sales.mjs`, idempotent).
+- **Security audit** — DONE 2026-08-11: see `backend/SECURITY.md` §audit (SGE cert pin, WS origin check, TOTP events, dep advisory cleared; residuals documented).
+- Lich URL migrations to `/api/modules/*` (jar seller, healer, characters watchdog, config, accounts) + retire v1 (port 3100) — **remaining**.
+- Game View (VellumFE deep-link) — deferred: needs a VellumFE instance; seam design in `docs/design/output/04-game-view/`.
 
 ### Hardening backlog (documented in backend/SECURITY.md)
 - `.bak` rotation (config/entry writes), symlink realpath checks on fs capabilities, payload caps where missing, PasswordCipher password-in-ARGV → stdin (server-only concern).
@@ -90,14 +92,14 @@ as the `pricing` module.
 - Frontend dev: `cd frontend && npm run dev` (proxies /api + /ws → backend :3102; `BACKEND_PORT` override). WS client auto-reconnects; pages use `useWsEvents` for live boards (jars/healer). Token gate → `GET /api/me` → scopes drive nav.
 - Gemini/Antigravity may work the repo too — `AGENTS.md` + the frontend handoff brief are its instructions; a stale working tree can collide, so `git pull` + check `git status` before starting.
 
-## 7. Session handoff — 2026-08-11 → next session (start here)
+## 7. Session handoff — 2026-08-11 EOD → next session (start here)
 
-**Where we are:** Phase A + B complete (9 modules, 219 tests, frontend manifest-driven nav/routes + polish). **Phase C deployed 2026-08-11**: all 9 modules + frontend live on prod :3102 (verified endpoint-by-endpoint), Caddy site `gsiv.phylactery.ovh` wired and verified via Host header. main @ `2788b26`.
+**Where we are:** Phase A + B complete; **Phase C LIVE** — all 9 modules + frontend on `https://gsiv.phylactery.ovh` (DNS added by user), pricing data imported (16,775 sales), hardening done, full security audit done (backend/SECURITY.md §audit). 238 tests. main @ latest.
 
-**Finish Phase C (in order):**
-1. **Cloudflare DNS** (user action): A record `gsiv` → `51.68.235.144` (proxied, like `dashboard`/`sales`). Once it propagates, `https://gsiv.phylactery.ovh` is live — verify `/health`, log in with an admin token, click through the 8 module pages. (Everything behind it is already tested via Host-header curl.)
-2. **Pricing data import**: `/opt/sales-tracker/data/sales.db` → v2 pricing DB (see `deploy/V2-DEPLOYMENT.md`).
-3. **Lich URL migrations** to `/api/modules/*` (jar seller, healer, characters watchdog, config, accounts) + retire v1 (port 3100) once confident.
+**Remaining (in order):**
+1. **Lich URL migrations** to `/api/modules/*` (jar seller, healer, characters watchdog, config, accounts) + **retire v1** (port 3100) once confident — the last Phase C item; v1 is still the live Lich integration.
+2. **Game View** (VellumFE deep-link seam) — needs a VellumFE instance on the server; design docs ready.
+3. Dev-only residue: `GET /api/logs` is ported; demo-data reseed tip on dev; stale dev servers (:3102/:5173) kill before redeploy.
 
 **If continuing dev:** gate = `cd backend && npm test && npm run typecheck && npm run lint` + `cd frontend && npm run build`. Run backend (`cd backend && AUTH_TOKENS=... npx tsx src/index.ts`) + frontend (`npm run dev`), paste token in the UI. Dev servers may be running from a previous session — kill stale ones first.
 
