@@ -90,7 +90,7 @@ describe("YourShopsStore", () => {
     store.scan(pricing);
     pricing.get().prepare(
       `INSERT INTO sales (item_id, name, town, shop, cost, enchant, worn, wear_location, material, item_type, is_weapon, is_armor, is_jewelry, enhancives, removed_date, scraped_at)
-       VALUES ('g4', 'a jar containing uncut emeralds', "Ta'Vaalor", 'Erendiir', 24000, NULL, NULL, NULL, 'glass', 'jar', 0, 0, 0, '[]', '2026-07-26T00:00:00.000Z', '2026-07-26T01:00:00.000Z')`,
+       VALUES ('g4', 'a jar containing uncut emeralds', 'Ta''Vaalor', 'Erendiir', 24000, NULL, NULL, NULL, 'glass', 'jar', 0, 0, 0, '[]', '2026-07-26T00:00:00.000Z', '2026-07-26T01:00:00.000Z')`,
     ).run();
     const res = store.scan(pricing);
     expect(res.new).toBe(1);
@@ -417,7 +417,7 @@ describe("your-shops module routes", () => {
     expect(await scan1.json()).toMatchObject({ new: 0, baselined: 3 });
     pricing.get().prepare(
       `INSERT INTO sales (item_id, name, town, shop, cost, enchant, worn, wear_location, material, item_type, is_weapon, is_armor, is_jewelry, enhancives, removed_date, scraped_at)
-       VALUES ('g9', 'a jar containing uncut emeralds', "Ta'Vaalor", 'Erendiir', 32000, NULL, NULL, NULL, 'glass', 'jar', 0, 0, 0, '[]', '2026-07-27T00:00:00.000Z', '2026-07-27T01:00:00.000Z')`,
+       VALUES ('g9', 'a jar containing uncut emeralds', 'Ta''Vaalor', 'Erendiir', 32000, NULL, NULL, NULL, 'glass', 'jar', 0, 0, 0, '[]', '2026-07-27T00:00:00.000Z', '2026-07-27T01:00:00.000Z')`,
     ).run();
     const scan2 = await app.request("/api/modules/your-shops/scan", { method: "POST", headers: h });
     expect(await scan2.json()).toMatchObject({ new: 1 });
