@@ -81,6 +81,7 @@ export function createAnalysisModule(analysisFiles: AnalysisFiles, runner: Scrip
       { name: "analysis.read", description: "Read analysis output/history and game log tails" },
       { name: "analysis.write", description: "Kick analysis scripts and upload combat logs" },
     ],
+    nav: { path: "/analysis", title: "Analysis", group: "platform", order: 30, icon: "📊" },
     routeScopes: {
       "GET /analysis": ["analysis.read"],
       "GET /analysis/history": ["analysis.read"],

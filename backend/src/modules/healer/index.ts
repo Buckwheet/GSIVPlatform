@@ -155,6 +155,7 @@ export function createHealerModule(store: HealerStore): Module {
       { name: "healer.read", description: "Read healer status and heal requests" },
       { name: "healer.write", description: "Register/heartbeat, request/accept/complete heals" },
     ],
+    nav: { path: "/healer", title: "Healer", group: "operations", order: 60, icon: "⛑️" },
     routeScopes: {
       "GET /status": ["healer.read"],
       "GET /requests": ["healer.read"],

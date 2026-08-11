@@ -137,6 +137,7 @@ export function createConfigModule(lichDb: LichDb, configFiles: ConfigFiles): Mo
       { name: "config.read", description: "Read character config files and go2/eherbs settings" },
       { name: "config.write", description: "Write character config files and go2/eherbs settings" },
     ],
+    nav: { path: "/config", title: "Config", group: "platform", order: 20, icon: "⚙️" },
     routeScopes: {
       "GET /config/:char": ["config.read"],
       "GET /config/:char/file": ["config.read"],

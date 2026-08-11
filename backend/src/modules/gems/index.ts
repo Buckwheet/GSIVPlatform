@@ -141,6 +141,7 @@ export function createGemsModule(store: GemsStore): Module {
       { name: "gems.read", description: "Read jar statuses and service queues" },
       { name: "gems.write", description: "Publish jar status, claim/clear, manage queues" },
     ],
+    nav: { path: "/jars", title: "Jars", group: "operations", order: 30, icon: "🫙" },
     routeScopes: {
       "GET /jars": ["gems.read"],
       "GET /jars/:char": ["gems.read"],

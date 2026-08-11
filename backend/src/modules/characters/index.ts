@@ -59,6 +59,7 @@ export function createCharactersModule(store: CharactersStore): Module {
       { name: "characters.read", description: "List characters and systemd status" },
       { name: "characters.write", description: "Start/stop/restart headless Lich sessions" },
     ],
+    nav: { path: "/characters", title: "Characters", group: "people", order: 10, icon: "🧝" },
     routeScopes: {
       "GET /characters": ["characters.read"],
       "GET /characters/:name": ["characters.read"],
