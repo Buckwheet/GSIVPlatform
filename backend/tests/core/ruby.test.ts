@@ -1,33 +1,32 @@
 import { describe, expect, it } from "vitest";
-import { type ExecFn, Ruby } from "../../src/core/ruby.js";
+import { defaultExec, type ExecFn, Ruby } from "../../src/core/ruby.js";
 
-function recordExec(records: { cmd: string; args: string[] }[], out: string) {
-  const exec: ExecFn = async (cmd, args, _timeoutMs) => {
-    records.push({ cmd, args });
+function recordExec(records: { cmd: string; args: string[]; input?: string }[], out: string) {
+  const exec: ExecFn = async (cmd, args, _timeoutMs, input) => {
+    records.push({ cmd, args, input });
     return { stdout: out, stderr: "", code: 0 };
   };
   return exec;
 }
 
 describe("Ruby capability", () => {
-  it("encryptPassword calls ruby -e with the fixed template and ARGV (no interpolation)", async () => {
-    const records: { cmd: string; args: string[] }[] = [];
+  it("encryptPassword passes the password via STDIN, never ARGV (no ps disclosure)", async () => {
+    const records: { cmd: string; args: string[]; input?: string }[] = [];
     const r = new Ruby(recordExec(records, "ENCRYPTED"), { lichDir: "/opt/gs4sd/lich5" });
     const res = await r.encryptPassword("BUCKWHEET", "hunter2");
     expect(res).toEqual({ ok: true, encrypted: "ENCRYPTED" });
     expect(records).toHaveLength(1);
-    const { cmd, args } = records[0];
+    const { cmd, args, input } = records[0];
     expect(cmd).toBe("ruby");
     expect(args[0]).toBe("-C");
     expect(args[1]).toBe("/opt/gs4sd/lich5");
-    expect(args[2]).toBe("-e");
-    // the script must reference ARGV, never the literal account name or password
+    // script reads the password from STDIN and the account from ARGV
+    expect(args[3]).toContain("STDIN.read");
     expect(args[3]).toContain("ARGV[0]");
-    expect(args[3]).toContain("ARGV[1]");
-    expect(args[3]).not.toContain("BUCKWHEET");
     expect(args[3]).not.toContain("hunter2");
-    expect(args[4]).toBe("hunter2");
-    expect(args[5]).toBe("BUCKWHEET");
+    expect(args[3]).not.toContain("BUCKWHEET");
+    expect(args[4]).toBe("BUCKWHEET");
+    expect(input).toBe("hunter2"); // the secret travels via stdin
   });
 
   it("decryptPassword passes the entry.yaml path via ARGV and reads the stored value", async () => {
@@ -50,6 +49,13 @@ describe("Ruby capability", () => {
       expect(res.ok, `should reject ${JSON.stringify(bad)}`).toBe(false);
     }
     expect(records).toHaveLength(0);
+  });
+
+  it("defaultExec survives a child that exits before reading stdin (EPIPE)", async () => {
+    // node exits immediately; the stdin write then hits EPIPE. Without the
+    // error handler this would crash the process as an unhandled 'error'.
+    const res = await defaultExec(process.execPath, ["-e", "process.exit(1)"], 5000, "hunter2");
+    expect(res.code).toBe(1);
   });
 
   it("maps a ruby failure to {ok:false, error} without throwing", async () => {

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -84,6 +84,47 @@ describe("ConfigFiles capability", () => {
       expect(fromGST.content).toBe("gst-version");
       expect(fromGSIV.content).toBe("gsiv-version");
     }
+  });
+
+  it("write() rejects content over the size cap (too_large)", async () => {
+    const big = "x".repeat(2 * 1024 * 1024);
+    expect(await cf.write("Fisternar", "big.txt", big)).toEqual({ ok: false, code: "too_large" });
+    expect(existsSync(join(GSIV, "Fisternar", "big.txt"))).toBe(false);
+  });
+
+  it("rejects symlinked paths inside the char dir (containment)", async () => {
+    const outside = join(TMP, "outside");
+    mkdirSync(outside, { recursive: true });
+    writeFileSync(join(outside, "secret.txt"), "secret");
+    const link = join(GSIV, "Fisternar", "evil-link");
+    try {
+      symlinkSync(outside, link, process.platform === "win32" ? "junction" : "dir");
+    } catch {
+      return; // no symlink privilege on this host — skip
+    }
+    expect(await cf.read("Fisternar", "evil-link/secret.txt")).toEqual({ ok: false, code: "bad_path" });
+    expect(await cf.write("Fisternar", "evil-link/out.txt", "x")).toEqual({ ok: false, code: "bad_path" });
+  });
+
+  it("rejects a symlinked char dir itself (root escape)", async () => {
+    const outside = join(TMP, "outside-root");
+    mkdirSync(outside, { recursive: true });
+    writeFileSync(join(outside, "root.txt"), "root-secret");
+    const link = join(GSIV, "Rootchar");
+    try {
+      symlinkSync(outside, link, process.platform === "win32" ? "junction" : "dir");
+    } catch {
+      return; // no symlink privilege on this host — skip
+    }
+    expect(await cf.list("Rootchar")).toEqual({ ok: true, character: "Rootchar", files: [] });
+    expect(await cf.read("Rootchar", "root.txt")).toEqual({ ok: false, code: "bad_path" });
+  });
+
+  it("rotates .bak backups — only the newest 5 remain", async () => {
+    for (let i = 0; i < 8; i++) await cf.write("Fisternar", "data/var.txt", `v${i}`);
+    const backups = readdirNames(join(GSIV, "Fisternar", "data")).filter((f) => f.startsWith("var.txt.bak."));
+    expect(backups.length).toBe(5);
+    expect(readFileSync(join(GSIV, "Fisternar", "data", "var.txt"), "utf-8")).toBe("v7");
   });
 
   it("rejects invalid character names", async () => {

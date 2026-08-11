@@ -1,6 +1,6 @@
 import { copyFileSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { EntryYaml } from "../../src/core/entry-yaml.js";
 
@@ -69,6 +69,16 @@ describe("EntryYaml CRUD", () => {
     const backups = readdirSync(TMP).filter((f) => f.startsWith("entry-") && f.includes(".bak."));
     expect(backups.length).toBeGreaterThan(0);
     expect(require("node:fs").readFileSync(path, "utf-8")).toBe("new: content\n");
+  });
+
+  it("rotates .bak backups — only the newest 5 remain", () => {
+    const { yaml, path } = freshYaml();
+    for (let i = 0; i < 8; i++)
+      yaml.write(`v: ${i}
+`);
+    const name = basename(path);
+    const backups = readdirSync(TMP).filter((f) => f.startsWith(`${name}.bak.`));
+    expect(backups.length).toBe(5);
   });
 
   it("rejects invalid account/char names (fail closed)", () => {

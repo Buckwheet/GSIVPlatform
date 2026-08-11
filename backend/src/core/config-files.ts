@@ -1,5 +1,15 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve, sep } from "node:path";
+import {
+  copyFileSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { validateCharName } from "./systemd.js";
 
 // ---------------------------------------------------------------------------
@@ -15,7 +25,10 @@ export interface ConfigFileEntry {
   modified: string;
 }
 
-export type FileResult = { ok: false; code: "bad_path" | "missing" | "invalid_char" };
+export type FileResult = { ok: false; code: "bad_path" | "missing" | "invalid_char" | "too_large" };
+
+/** Cap for config file writes (settings / lich scripts are a few KB; 1 MiB is generous). */
+export const MAX_CONFIG_FILE_BYTES = 1024 * 1024;
 
 type Ok<T> = { ok: true } & T;
 
@@ -30,6 +43,11 @@ export class ConfigFiles {
     if (!this.validName(char)) return { ok: false, code: "invalid_char" };
     const charDir = this.resolveCharDir(char, instance);
     if (!charDir) return { ok: true, character: char, files: [] };
+    try {
+      if (lstatSync(charDir).isSymbolicLink()) return { ok: true, character: char, files: [] };
+    } catch {
+      return { ok: true, character: char, files: [] };
+    }
     const files: ConfigFileEntry[] = [];
     this.walk(charDir, "", files);
     return { ok: true, character: char, files };
@@ -52,6 +70,7 @@ export class ConfigFiles {
     instance?: string,
   ): Promise<Ok<{ character: string; file: string }> | FileResult> {
     if (!this.validName(char)) return { ok: false, code: "invalid_char" };
+    if (Buffer.byteLength(content, "utf-8") > MAX_CONFIG_FILE_BYTES) return { ok: false, code: "too_large" };
     let charDir = this.resolveCharDir(char, instance);
     if (!charDir) {
       charDir = join(this.opts.gsivDir, char);
@@ -61,7 +80,10 @@ export class ConfigFiles {
     if (!full) return { ok: false, code: "bad_path" };
     const dir = dirname(full);
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    if (existsSync(full)) copyFileSync(full, `${full}.bak.${Date.now()}`);
+    if (existsSync(full)) {
+      copyFileSync(full, `${full}.bak.${Date.now()}`);
+      this.rotateBackups(full);
+    }
     writeFileSync(full, content);
     return { ok: true, character: char, file: relPath };
   }
@@ -76,6 +98,11 @@ export class ConfigFiles {
     if (!this.validName(target) || !this.validName(source)) return { ok: false, code: "invalid_char" };
     const srcDir = this.resolveCharDir(source, instance);
     if (!srcDir) return { ok: false, code: "missing" };
+    try {
+      if (lstatSync(srcDir).isSymbolicLink()) return { ok: false, code: "missing" };
+    } catch {
+      return { ok: false, code: "missing" };
+    }
     const tgtDir = this.resolveCharDir(target, instance) ?? join(this.opts.gsivDir, target);
     if (!existsSync(tgtDir)) mkdirSync(tgtDir, { recursive: true });
     const copied: string[] = [];
@@ -89,7 +116,10 @@ export class ConfigFiles {
           if (!safeTarget) continue;
           const tgtDirPath = dirname(safeTarget);
           if (!existsSync(tgtDirPath)) mkdirSync(tgtDirPath, { recursive: true });
-          if (existsSync(safeTarget)) copyFileSync(safeTarget, `${safeTarget}.bak.${Date.now()}`);
+          if (existsSync(safeTarget)) {
+            copyFileSync(safeTarget, `${safeTarget}.bak.${Date.now()}`);
+            this.rotateBackups(safeTarget);
+          }
           copyFileSync(join(dir, e.name), safeTarget);
           copied.push(rel);
         }
@@ -144,13 +174,48 @@ export class ConfigFiles {
     const full = resolve(charDir, ...segments);
     const prefix = `${resolve(charDir)}${sep}`;
     if (full !== resolve(charDir) && !full.startsWith(prefix)) return null;
+    // Symlink containment: lexical checks can't see symlinks — a symlinked file,
+    // dir, or the char dir itself could point outside it. Reject any existing component.
+    try {
+      if (lstatSync(charDir).isSymbolicLink()) return null;
+    } catch {
+      return null; // char dir must exist and be real
+    }
+    let cur = resolve(charDir);
+    for (const seg of segments) {
+      cur = join(cur, seg);
+      try {
+        if (lstatSync(cur).isSymbolicLink()) return null;
+      } catch {
+        break; // component does not exist yet — nothing to follow
+      }
+    }
     return full;
+  }
+
+  /** Keep only the 5 newest .bak.<ts> copies of a config file. */
+  private rotateBackups(file: string): void {
+    const dir = dirname(file);
+    const base = `${basename(file)}.bak.`;
+    const num = (f: string) => Number.parseInt(f.slice(base.length), 10) || 0;
+    const backups = readdirSync(dir)
+      .filter((f) => f.startsWith(base))
+      .sort((a, b) => num(a) - num(b));
+    const keep = 5;
+    for (const old of backups.slice(0, Math.max(0, backups.length - keep))) {
+      try {
+        rmSync(join(dir, old));
+      } catch {
+        // best effort — a failed prune must not fail the write
+      }
+    }
   }
 
   private walk(dir: string, prefix: string, out: ConfigFileEntry[]): void {
     for (const e of readdirSync(dir, { withFileTypes: true })) {
       const rel = prefix ? `${prefix}/${e.name}` : e.name;
       const full = join(dir, e.name);
+      if (e.isSymbolicLink()) continue;
       if (e.isDirectory()) {
         this.walk(full, rel, out);
       } else {

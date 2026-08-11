@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import { dirname } from "node:path";
 import { validateCharName } from "./systemd.js";
 
@@ -19,14 +19,14 @@ export interface ExecResult {
   code: number | null;
 }
 
-export type ExecFn = (cmd: string, args: string[], timeoutMs: number) => Promise<ExecResult>;
+export type ExecFn = (cmd: string, args: string[], timeoutMs: number, input?: string) => Promise<ExecResult>;
 
 const RUBY_TIMEOUT_MS = 10_000;
 
 const ENCRYPT_SCRIPT = `
 require_relative "lib/common/gui/password_cipher"
-password = ARGV[0]
-account_name = ARGV[1]
+password = STDIN.read
+account_name = ARGV[0]
 print Lich::Common::GUI::PasswordCipher.encrypt(password, mode: :standard, account_name: account_name)
 `;
 
@@ -41,16 +41,35 @@ enc = account && account[1]["password"]
 print Lich::Common::GUI::PasswordCipher.decrypt(enc, mode: :standard, account_name: account_name)
 `;
 
-function defaultExec(cmd: string, args: string[], timeoutMs: number): Promise<ExecResult> {
+export function defaultExec(cmd: string, args: string[], timeoutMs: number, input?: string): Promise<ExecResult> {
+  // spawn (not execFile): the password travels via stdin — execFile input is
+  // unreliable on Windows and ARGV would leak the secret in the process table.
   return new Promise((resolve) => {
-    execFile(cmd, args, { timeout: timeoutMs }, (err, stdout, stderr) => {
-      if (err) {
-        const code = typeof (err as { code?: unknown }).code === "number" ? (err as { code: number }).code : null;
-        resolve({ stdout: String(stdout ?? ""), stderr: String(stderr ?? ""), code });
-      } else {
-        resolve({ stdout: String(stdout ?? ""), stderr: String(stderr ?? ""), code: 0 });
-      }
+    const child = spawn(cmd, args, { timeout: timeoutMs });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (d: Buffer) => {
+      stdout += d.toString();
     });
+    child.stderr.on("data", (d: Buffer) => {
+      stderr += d.toString();
+    });
+    child.on("error", (err) => {
+      // spawn failure (ENOENT etc.) — surface stderr if the process never ran
+      resolve({ stdout, stderr: stderr || (err as Error).message, code: null });
+    });
+    child.on("close", (code) => {
+      resolve({ stdout, stderr, code: code ?? null });
+    });
+    // ruby may exit before reading stdin (missing binary, bad require) — a write
+    // then hits EPIPE; ignore it or the unhandled error would crash the server.
+    child.stdin.on("error", () => {});
+    try {
+      child.stdin.write(input ?? "");
+    } catch {
+      // stdin already closed
+    }
+    child.stdin.end();
   });
 }
 
@@ -76,7 +95,8 @@ export class Ruby {
     }
     const cwd =
       this.opts.lichDir ?? lichDirFromEntryYaml(process.env.ENTRY_YAML_PATH ?? "/opt/gs4sd/lich5/data/entry.yaml");
-    const res = await this.run(ENCRYPT_SCRIPT, [plainPassword, accountName], cwd);
+    // password travels via stdin — never ARGV (argv is visible in `ps`)
+    const res = await this.run(ENCRYPT_SCRIPT, [accountName], cwd, plainPassword);
     if (res.code !== 0) return { ok: false, error: res.stderr.trim() || `ruby failed (code ${res.code})` };
     return { ok: true, encrypted: res.stdout.trim() };
   }
@@ -97,8 +117,8 @@ export class Ruby {
     return { ok: true, plain: res.stdout.trim() };
   }
 
-  private run(script: string, args: string[], cwd: string): Promise<ExecResult> {
+  private run(script: string, args: string[], cwd: string, input?: string): Promise<ExecResult> {
     // ruby -C <lichDir>: chdir before running so require_relative resolves (v1 used execFile cwd).
-    return this.exec("ruby", ["-C", cwd, "-e", script, ...args], RUBY_TIMEOUT_MS);
+    return this.exec("ruby", ["-C", cwd, "-e", script, ...args], RUBY_TIMEOUT_MS, input);
   }
 }
