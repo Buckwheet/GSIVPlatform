@@ -92,6 +92,38 @@ curl -s -H 'Host: gsiv.phylactery.ovh' -H "Authorization: Bearer $TOK" http://12
 - Stream more chars (3-step recipe below) when they come online; confirm the zero-click Watch flow in a real browser
 - `gs4sd_streamer.lic` / `ebounty_tracker.lic` are retired with v1 (BuckTV replaced by VellumFE; bounty has no v2 home yet)
 
+## Lich + Ruby upgrade (2026-08-11: v5.16.2 -> v5.19.1, Ruby 3.2 -> 4.0.6)
+
+Lich 5.19+ requires **Ruby >= 4.0** (v5.19.1 pins `.ruby-version` 4.0.3). Ubuntu 24.04's apt Ruby is
+3.2, so the server uses **rbenv Ruby 4.0.6** (`/home/ubuntu/.rbenv/versions/4.0.6`). The Lich install
+at `/opt/gs4sd/lich5` is a git clone of `elanthia-online/lich-5`; upgrades are done by tag checkout
+(`scripts/`, `data/`, `maps/`, `logs/` are gitignored -> preserved; backup first).
+
+**Current versions:** Ruby 4.0.6 (rbenv), Lich v5.19.1 (detached HEAD at tag). Bundle: full
+`bundle install` under 4.0.6 (78 gems; gtk3/curses native builds succeeded so no `BUNDLE_WITHOUT`
+needed). Lich units run `/home/ubuntu/.rbenv/versions/4.0.6/bin/ruby` (base unit + every
+per-char override + lich-test — ALL must be repointed together).
+
+**To update Lich again:**
+1. Backup: `sudo tar czf /opt/gs4sd/lich5-upgrade-backup-YYYY-MM-DD.tgz --exclude=logs --exclude=.git -C /opt/gs4sd lich5`
+2. `cd /opt/gs4sd/lich5 && git fetch --tags origin && git checkout v<new>` (or `git checkout main` to track upstream)
+3. `export PATH="$HOME/.rbenv/versions/4.0.6/bin:$PATH" && bundle install`
+4. Smoke test on the test server first (e.g. the Amn unit's flags with `--gs --test`) before touching live chars.
+5. `sudo systemctl restart gs4sd-lich@Fisternar gs4sd-lich@Neleourg` (brief per-char disconnect).
+6. Verify: `systemctl is-active` both; `curl localhost:3102/api/modules/lich/watchdog` (heartbeats fresh);
+   `curl localhost:3102/api/modules/gameview/streams` with the admin token (`up:true` for both) — the
+   gameview probe confirms the detach servers answer. VellumFE dials the detach port only when a
+   browser session connects, so no idle TCP connections is normal.
+
+**Rollback:** restore the tar (or `git checkout` the recorded HEAD) + point the units back at
+`/usr/bin/ruby` (or the previous rbenv version) + `daemon-reload` + restart.
+
+**Gotchas hit during the 2026-08-11 upgrade:**
+- `systemctl start` on an already-active unit is a no-op — after repointing ExecStart you MUST
+  `systemctl restart` (the units auto-restart on failure with the OLD config; don't be fooled).
+- `pkill -f 'lich.rbw'` matches your own shell if the pattern appears in the ssh command line —
+  it killed the live units and dropped the ssh session. Use exact patterns / `pgrep` first.
+
 ## Lich migration + v1 retirement (2026-08-11)
 
 All Lich integration now runs against v2 `/api/modules/*`; v1 (port 3100) is retired.
