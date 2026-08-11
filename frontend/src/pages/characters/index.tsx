@@ -9,6 +9,7 @@ const POLL_MS = 15_000; // polling fallback (ws-data-pattern.md §8) until the W
 export default function Characters({ auth }: { auth: AuthState }) {
   const [rows, setRows] = useState<CharacterRow[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const { addToast } = useToast();
   const write = can(auth, ["characters.write"]);
@@ -19,6 +20,8 @@ export default function Characters({ auth }: { auth: AuthState }) {
       setError(null);
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -137,6 +140,7 @@ export default function Characters({ auth }: { auth: AuthState }) {
         rowKey={(r) => r.char_name}
         ariaLabel="Lich character sessions"
         emptyState="No characters configured in entry.yaml."
+        loading={loading}
       />
     </div>
   );

@@ -14,6 +14,7 @@ export default function Inventory({ auth }: { auth: AuthState }) {
   const [q, setQ] = useState("");
   const [rows, setRows] = useState<InvRow[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
   const { addToast } = useToast();
 
@@ -33,6 +34,7 @@ export default function Inventory({ auth }: { auth: AuthState }) {
       });
     } finally {
       setSearching(false);
+      setLoading(false);
     }
   }
 
@@ -84,6 +86,7 @@ export default function Inventory({ auth }: { auth: AuthState }) {
         rows={rows}
         rowKey={(r, idx) => String(r.id ?? idx)}
         ariaLabel="Character inventory item list"
+        loading={loading}
         emptyState="No items found (inventory module may be unavailable on this backend)."
       />
     </div>
