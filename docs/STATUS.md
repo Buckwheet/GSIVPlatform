@@ -61,14 +61,14 @@ as the `pricing` module.
 ### Phase B — frontend (complete)
 - **Registry-driven module manifest** — DONE (PR #14): `cd backend && npm run gen:manifest` regenerates `frontend/src/generated/modules.json`; nav + routes derive from it (fail-fast validation, per-page code-splitting).
 - Design polish — DONE (PR #15): loading states on all fetch pages, density toggle (topbar, persisted, coarse-pointer-safe), a11y; backend Biome lint fully clean.
-- Game View: link to VellumFE headless on server, deep-link only (`04-game-view`) — pending (config/deploy item).
+- Game View — **LIVE (2026-08-11)**: VellumFE (Nisugi beta.37) headless per char on the box, Lich `--detachable-client` attach (Fisternar 9101, Neleourg 9102), Caddy `vellum.phylactery.ovh` + basic_auth, dashboard Watch column via the `gameview` module. See `deploy/V2-DEPLOYMENT.md` §VellumFE.
 
 ### Phase C — deploy-phase (`deploy/V2-DEPLOYMENT.md`)
 - **Redeploy v2** — DONE 2026-08-11: all 9 modules + frontend live, **DNS added, site public**.
 - **Pricing data import** — DONE: 16,775 sales + 8 listings imported (`backend/scripts/import-sales.mjs`, idempotent).
 - **Security audit** — DONE 2026-08-11: see `backend/SECURITY.md` §audit (SGE cert pin, WS origin check, TOTP events, dep advisory cleared; residuals documented).
 - Lich URL migrations to `/api/modules/*` (jar seller, healer, characters watchdog, config, accounts) + retire v1 (port 3100) — **remaining**.
-- Game View (VellumFE deep-link) — deferred: needs a VellumFE instance; seam design in `docs/design/output/04-game-view/`.
+- Game View — **LIVE (2026-08-11)**: VellumFE (Nisugi beta.37) headless per char on the box, Lich `--detachable-client` attach (Fisternar 9101, Neleourg 9102), Caddy `vellum.phylactery.ovh` + basic_auth, dashboard Watch column via the `gameview` module. See `deploy/V2-DEPLOYMENT.md` §VellumFE.
 
 ### Hardening backlog (documented in backend/SECURITY.md)
 - `.bak` rotation (config/entry writes), symlink realpath checks on fs capabilities, payload caps where missing, PasswordCipher password-in-ARGV → stdin (server-only concern).
@@ -98,7 +98,7 @@ as the `pricing` module.
 
 **Remaining (in order):**
 1. **Lich URL migrations** to `/api/modules/*` (jar seller, healer, characters watchdog, config, accounts) + **retire v1** (port 3100) once confident — the last Phase C item; v1 is still the live Lich integration.
-2. **Game View** (VellumFE deep-link seam) — needs a VellumFE instance on the server; design docs ready.
+- Game View — **LIVE (2026-08-11)**: VellumFE (Nisugi beta.37) headless per char on the box, Lich `--detachable-client` attach (Fisternar 9101, Neleourg 9102), Caddy `vellum.phylactery.ovh` + basic_auth, dashboard Watch column via the `gameview` module. See `deploy/V2-DEPLOYMENT.md` §VellumFE.
 3. Dev-only residue: `GET /api/logs` is ported; demo-data reseed tip on dev; stale dev servers (:3102/:5173) kill before redeploy.
 
 **If continuing dev:** gate = `cd backend && npm test && npm run typecheck && npm run lint` + `cd frontend && npm run build`. Run backend (`cd backend && AUTH_TOKENS=... npx tsx src/index.ts`) + frontend (`npm run dev`), paste token in the UI. Dev servers may be running from a previous session — kill stale ones first.

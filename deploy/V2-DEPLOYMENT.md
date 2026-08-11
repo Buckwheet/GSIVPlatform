@@ -88,3 +88,14 @@ curl -s -H 'Host: gsiv.phylactery.ovh' -H "Authorization: Bearer $TOK" http://12
 - Pricing data import from the old sales-tracker DB (`/opt/sales-tracker/data/sales.db`)
 - Lich autoprice URL migration to `/api/modules/pricing/*` (+ jar seller, healer, characters watchdog, config, accounts)
 - Retire v1 (port 3100) once all modules are ported
+
+## VellumFE streams (2026-08-11)
+
+Headless per-character game streams replacing bucktv's role (dashboard Watch links).
+- Binary: upstream `Nisugi/VellumFE` `v0.3.0-beta.37` linux-x86_64 (sha256-verified) at `/opt/vellumfe/vellum-fe`; deps `libspeechd2 libasound2t64` (Ubuntu 24.04).
+- Lich: each streamed char's unit gets `--detachable-client=<port>` (Profanity detach protocol — VellumFE is ProfanityFE rewritten). Drop-ins: `/etc/systemd/system/gs4sd-lich@<Char>.service.d/override.conf` (backed up before edit).
+- Stream unit: `vellum-fe@<Char>.service` template + per-char drop-in override for ports. Alloc: detach `9101+`, web `9201+` by char (Fisternar 9101/9201, Neleourg 9102/9202).
+- Caddy: `vellum.phylactery.ovh` → basic_auth (`gsiv` user, hash in Caddyfile; change with `caddy hash-password`) → reverse_proxy `127.0.0.1:<web>`.
+- Web UI auth: pairing token per data dir (`~/.vellum-fe`, shown at boot: `Web UI: .../play#token=<t>`); pairing is remembered per browser. The UI prefills the Lich-attach form from `#rhost=/#rport=` but deliberately never auto-connects — one Connect click per session.
+- Platform seam: backend `gameview` module (`/api/modules/gameview/streams`, scope `gameview.read`) built from `VELLUM_BASE_URL` + `VELLUM_STREAMS` env; Characters page renders a Watch column (new tab).
+- Scaling: to stream another char, add `--detachable-client=<port>` to its Lich unit (restart — brief disconnect), a `vellum-fe@<Char>` port override, and the `VELLUM_STREAMS` entry.
