@@ -1,13 +1,14 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { can, type AuthState } from "../core/auth";
 import { NAV_GROUPS, NAV_ITEMS } from "../core/manifest";
+import { Button, Badge } from "../components";
 
 interface Props {
   auth: AuthState;
   onSignOut: () => void;
 }
 
-/** Sidebar + topbar shell; nav is data-driven and scope-gated (nav-ia.md). */
+/** Sidebar + topbar shell; nav is data-driven and scope-gated. */
 export function AppShell({ auth, onSignOut }: Props) {
   const location = useLocation();
   const visible = NAV_ITEMS.filter((item) => can(auth, item.requiresScopes));
@@ -41,15 +42,18 @@ export function AppShell({ auth, onSignOut }: Props) {
       </aside>
       <div className="main-col">
         <header className="topbar">
-          <span className="topbar-title muted">GSIV Platform</span>
+          <span className="topbar-title muted" style={{ fontSize: "var(--font-size-sm)" }}>GSIV Platform</span>
           <span className="topbar-right">
-            <span className="muted">{auth.name}</span>
-            <span className="scope-chip" title={auth.scopes.join(", ")}>
-              {auth.scopes.includes("*") ? "admin" : `${auth.scopes.length} scope${auth.scopes.length === 1 ? "" : "s"}`}
-            </span>
-            <button className="link-btn" onClick={onSignOut}>
+            <span className="muted" style={{ fontSize: "var(--font-size-sm)" }}>{auth.name}</span>
+            <Badge
+              color="neutral"
+              variant="tinted"
+              label={auth.scopes.includes("*") ? "admin" : `${auth.scopes.length} scope${auth.scopes.length === 1 ? "" : "s"}`}
+              title={auth.scopes.join(", ")}
+            />
+            <Button variant="ghost" size="sm" onClick={onSignOut}>
               Sign out
-            </button>
+            </Button>
           </span>
         </header>
         <main className="content">

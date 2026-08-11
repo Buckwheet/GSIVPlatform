@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { api } from "../../core/api";
 import { can, type AuthState } from "../../core/auth";
+import { Card, Skeleton } from "../../components";
 
 interface TileDef {
   id: string;
@@ -68,6 +69,7 @@ interface TileState {
 
 export default function Dashboard({ auth }: { auth: AuthState }) {
   const [tiles, setTiles] = useState<Record<string, TileState>>({});
+  const navigate = useNavigate();
 
   useEffect(() => {
     for (const t of TILES) {
@@ -84,27 +86,49 @@ export default function Dashboard({ auth }: { auth: AuthState }) {
 
   return (
     <div>
-      <h1>Dashboard</h1>
-      <p className="muted">Live summaries from the platform backend.</p>
+      <header className="page-header" style={{ flexDirection: "column" }}>
+        <h1 className="page-header-title">Dashboard</h1>
+        <p className="muted" style={{ margin: "var(--space-1) 0 0 0" }}>
+          Live summaries from the platform backend.
+        </p>
+      </header>
       <div className="tile-grid">
         {visible.map((t) => {
           const state = tiles[t.id];
+          const hasData = state && (state.value !== undefined || state.error !== undefined);
           return (
-            <Link to={t.path} key={t.id} className="tile panel">
-              <div className="tile-icon">{t.icon}</div>
-              <div className="tile-title">{t.title}</div>
-              {!state ? (
-                <div className="skeleton" aria-label="loading" />
+            <Card
+              key={t.id}
+              interactive
+              onClick={() => navigate(t.path)}
+              ariaLabel={`Go to ${t.title}`}
+              title={
+                <div style={{ display: "flex", alignItems: "center", gap: "var(--control-gap)" }}>
+                  <span style={{ fontSize: "var(--font-size-xl)" }}>{t.icon}</span>
+                  <span>{t.title}</span>
+                </div>
+              }
+            >
+              {!hasData ? (
+                <Skeleton variant="text" lines={1} height={16} style={{ marginTop: "var(--space-2)" }} />
               ) : state.error ? (
-                <div className="tile-value error">{state.error}</div>
+                <span className="error" style={{ fontSize: "var(--font-size-sm)" }}>
+                  {state.error}
+                </span>
               ) : (
-                <div className="tile-value">{state.value}</div>
+                <span style={{ fontSize: "var(--font-size-md)", fontWeight: "var(--font-weight-bold)" }}>
+                  {state.value}
+                </span>
               )}
-            </Link>
+            </Card>
           );
         })}
         {!visible.length && (
-          <p className="muted">No scopes — sign in with a token that holds module scopes.</p>
+          <Card ariaLabel="No scopes card">
+            <p className="muted" style={{ margin: 0 }}>
+              No scopes — sign in with a token that holds module scopes.
+            </p>
+          </Card>
         )}
       </div>
     </div>
