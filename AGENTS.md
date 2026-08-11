@@ -33,3 +33,9 @@ Tokens: `name:token:scope1,scope2` (missing scopes = admin). The UI gates nav on
 
 ## Current state (main @ 4267998)
 Phase A backend complete (9 modules), Phase B frontend shell + all module pages + WS layer. Next: registry-driven manifest, design polish, deploy wiring.
+
+## Frontend design (Gemini/Antigravity handoff)
+If you are redesigning the frontend UI: follow `docs/design/2026-08-10-frontend-handoff.md` —
+implement the primitive kit from `docs/design/output/02-design-system/primitives.md` first,
+then rebuild pages. Keep the data layer, scope gating (`can()`), WS hooks (`useWsEvents`),
+and endpoint calls intact.
