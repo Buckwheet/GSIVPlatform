@@ -1,6 +1,6 @@
 # GSIVPlatform v2 — Server Deployment
 
-## Current state (2026-08-10)
+## Current state (2026-08-11)
 
 v2 is deployed on the production OVH server **alongside** v1 (non-destructive):
 
@@ -8,7 +8,7 @@ v2 is deployed on the production OVH server **alongside** v1 (non-destructive):
 |---|---|---|
 | Service | `gs4sd-backend.service` | `gsiv-platform.service` |
 | Port | 3100 | **3102** |
-| Path | `/opt/gs4sd/backend` | `/opt/gsiv-platform/backend` |
+| Path | `/opt/gs4sd/backend` | `/opt/gsiv-platform/backend` (frontend dist: `/opt/gsiv-platform/frontend`) |
 | Inventory DB | `invdb.ts` → `/opt/gs4sd/lich5/data/inv.db3` | same file, **read-only** via `INV_DB_PATH` |
 | Auth | env token map, no scopes | token + scopes (`*` admin) |
 
@@ -16,7 +16,9 @@ v2 is deployed on the production OVH server **alongside** v1 (non-destructive):
 
 - `/opt/gsiv-platform/backend/` — `dist/` (built), `package.json`, `node_modules`
 - `/opt/gsiv-platform/backend/.env` — **server-only, never committed** (mode 600)
+- `/opt/gsiv-platform/frontend/` — built frontend dist (served by Caddy)
 - `/etc/systemd/system/gsiv-platform.service` — unit (env from `.env`, `Restart=on-failure`)
+- `/etc/caddy/Caddyfile` — `gsiv.phylactery.ovh` site block (backups: `Caddyfile.bak-*`)
 
 ## Env (server-only)
 
@@ -26,19 +28,40 @@ REDIS_URL=            # empty => in-memory KV
 DB_PATH=/opt/gsiv-platform/backend/data/gsiv.db
 INV_DB_PATH=/opt/gs4sd/lich5/data/inv.db3
 PRICING_DB_PATH=/opt/gsiv-platform/backend/data/pricing.db
+ENTRY_YAML_PATH=/opt/gs4sd/lich5/data/entry.yaml
+LICH_DB_PATH=/opt/gs4sd/lich5/data/lich.db3
+ANALYSIS_DATA_DIR=/opt/gs4sd/data
+LICH_LOG_DIR=/opt/gs4sd/lich5/logs
+TOTP_SECRET_PATH=/opt/gsiv-platform/backend/data/totp_secret
 AUTH_TOKENS=admin:<uuid>:*
 ```
 
 Token generated with `node -e "console.log(require('crypto').randomUUID())"` —
 **rotate by editing the server .env and restarting**; never commit it.
 
-## Redeploy
+## Redeploy (backend + frontend)
 
 ```bash
 cd backend && npm run build
-scp -r dist package.json package-lock.json ubuntu@51.68.235.144:/tmp/gsiv-deploy/
-ssh ubuntu@51.68.235.144 "sudo cp -r /tmp/gsiv-deploy/* /opt/gsiv-platform/backend/ && cd /opt/gsiv-platform/backend && npm install --omit=dev && sudo systemctl restart gsiv-platform"
+cd ../frontend && npm run build
+# stage to separate names — dist/ (backend) and frontend-dist/ (frontend)
+scp -r backend/dist backend/package.json backend/package-lock.json ubuntu@51.68.235.144:/tmp/gsiv-deploy/
+scp -r frontend/dist ubuntu@51.68.235.144:/tmp/gsiv-deploy/frontend-dist
 ```
+
+**NOTE — copy the `dist` folder itself, not its contents** (`cp -r /tmp/gsiv-deploy/*` puts `dist/` back at `backend/dist`; `dist/*` would scatter files at the backend root and leave the old `dist/` in place — happened 2026-08-11, service kept serving 3 modules).
+
+```bash
+ssh ubuntu@51.68.235.144 "set -e
+  sudo cp -r /tmp/gsiv-deploy/dist /opt/gsiv-platform/backend/   # overwrites backend/dist
+  sudo cp /tmp/gsiv-deploy/package.json /tmp/gsiv-deploy/package-lock.json /opt/gsiv-platform/backend/
+  sudo rm -rf /opt/gsiv-platform/frontend && sudo mkdir -p /opt/gsiv-platform/frontend
+  sudo cp -r /tmp/gsiv-deploy/frontend/dist/* /opt/gsiv-platform/frontend/
+  cd /opt/gsiv-platform/backend && sudo npm install --omit=dev
+  sudo systemctl restart gsiv-platform"
+```
+
+Frontend assets use hashed filenames, so a stale browser cache is fine; `index.html` is served with `no-cache` by Caddy.
 
 ## Verify
 
@@ -46,19 +69,22 @@ ssh ubuntu@51.68.235.144 "sudo cp -r /tmp/gsiv-deploy/* /opt/gsiv-platform/backe
 curl -s http://127.0.0.1:3102/health
 TOK=$(grep '^AUTH_TOKENS=' /opt/gsiv-platform/backend/.env | cut -d: -f2)
 curl -s http://127.0.0.1:3102/api/modules/inventory/summary -H "Authorization: Bearer $TOK"
-curl -s http://127.0.0.1:3102/api/spec -H "Authorization: Bearer $TOK"
+curl -s http://127.0.0.1:3102/api/spec -H "Authorization: Bearer $TOK"   # should list all 9 modules (health/inventory/pricing/gems/healer/characters/accounts/config/analysis)
+# Frontend + Caddy routing (no DNS needed):
+curl -s -H 'Host: gsiv.phylactery.ovh' http://127.0.0.1/ | head
+curl -s -H 'Host: gsiv.phylactery.ovh' -H "Authorization: Bearer $TOK" http://127.0.0.1/api/modules/gems/jars
 ```
 
-## Verified live (2026-08-10)
+## Verified live (2026-08-11)
 
-- `/health` 200, module status 200, spec lists health/inventory/pricing
-- Inventory against real prod DB: 73 characters / 5,981 items / 840,340,579 silvers
-- No-auth requests → 401
-- Service survives restart
+- `/health` 200; spec lists **all 9 modules** (63 paths); no-auth → 401
+- Inventory against real prod DB; config reads real lich.db3/entry.yaml; analysis endpoints serve
+- Caddy `gsiv.phylactery.ovh` block: SPA + deep links, `/api` (200 with token / 401 without), `/health`, assets — all verified via Host-header curl
+- Service survives restart (`systemctl restart gsiv-platform`)
 
 ## Not yet done
 
-- Public exposure (Caddy subdomain/path for :3102) — deliberate, not wired yet
+- **Cloudflare DNS**: A record `gsiv` → `51.68.235.144` (proxied) — the only thing between the site and the public internet
 - Pricing data import from the old sales-tracker DB (`/opt/sales-tracker/data/sales.db`)
-- Lich autoprice URL migration to `/api/modules/pricing/*`
+- Lich autoprice URL migration to `/api/modules/pricing/*` (+ jar seller, healer, characters watchdog, config, accounts)
 - Retire v1 (port 3100) once all modules are ported
