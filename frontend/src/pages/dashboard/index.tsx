@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../core/api";
 import { can, type AuthState } from "../../core/auth";
-import { Card, Skeleton } from "../../components";
+import { Card, Skeleton, StatusDot } from "../../components";
 
 interface TileDef {
   id: string;
@@ -69,6 +69,9 @@ interface TileState {
 
 export default function Dashboard({ auth }: { auth: AuthState }) {
   const [tiles, setTiles] = useState<Record<string, TileState>>({});
+  const [online, setOnline] = useState<{ name: string; url?: string }[]>([]);
+  const [liveError, setLiveError] = useState<string | null>(null);
+  const canLive = can(auth, ["characters.read"]) && can(auth, ["gameview.read"]);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -82,6 +85,31 @@ export default function Dashboard({ auth }: { auth: AuthState }) {
     }
   }, [auth]);
 
+  // Who is logged in + their live stream link (Game View).
+  useEffect(() => {
+    if (!canLive) return;
+    async function refreshLive() {
+      try {
+        const [chars, streams] = await Promise.all([
+          api<{ char_name: string; active: boolean }[]>("/modules/characters/characters", auth),
+          api<Record<string, { url: string; up: boolean }>>("/modules/gameview/streams", auth),
+        ]);
+        setOnline(
+          chars
+            .filter((c) => c.active)
+            .map((c) => ({ name: c.char_name, url: streams[c.char_name]?.up ? streams[c.char_name].url : undefined })),
+        );
+        setLiveError(null);
+      } catch (err) {
+        setLiveError((err as Error).message);
+      }
+    }
+    void refreshLive();
+    const t = setInterval(() => void refreshLive(), 30_000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth, canLive]);
+
   const visible = TILES.filter((t) => can(auth, [t.scope]));
 
   return (
@@ -92,6 +120,58 @@ export default function Dashboard({ auth }: { auth: AuthState }) {
           Live summaries from the platform backend.
         </p>
       </header>
+      {canLive && (
+        <Card
+          ariaLabel="Live streams"
+          title={
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--control-gap)" }}>
+              <span style={{ fontSize: "var(--font-size-xl)" }}>📺</span>
+              <span>Live Streams</span>
+              <span className="muted" style={{ fontWeight: "var(--font-weight-normal)" }}>
+                {online.length > 0 ? `${online.length} online` : "none online"}
+              </span>
+            </div>
+          }
+        >
+          {liveError && (
+            <p className="error" style={{ fontSize: "var(--font-size-sm)", margin: "var(--space-2) 0 0 0" }}>
+              {liveError}
+            </p>
+          )}
+          {!liveError && online.length === 0 && (
+            <p className="muted" style={{ margin: "var(--space-2) 0 0 0" }}>No characters logged in right now.</p>
+          )}
+          {online.map((c) => (
+            <a
+              key={c.name}
+              href={c.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={c.url ? `Watch ${c.name}'s stream` : `${c.name} online, no stream`}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "var(--control-gap)",
+                padding: "var(--space-2) 0",
+                borderBottom: "1px solid var(--border)",
+                textDecoration: "none",
+                color: "inherit",
+              }}
+            >
+              <span style={{ display: "flex", alignItems: "center", gap: "var(--control-gap)" }}>
+                <StatusDot color="good" label="online" />
+                <span style={{ fontWeight: "var(--font-weight-bold)" }}>{c.name}</span>
+              </span>
+              {c.url ? (
+                <span className="gs-btn gs-btn--ghost gs-btn--sm">Watch ▸</span>
+              ) : (
+                <span className="muted" style={{ fontSize: "var(--font-size-sm)" }}>no stream</span>
+              )}
+            </a>
+          ))}
+        </Card>
+      )}
       <div className="tile-grid">
         {visible.map((t) => {
           const state = tiles[t.id];
