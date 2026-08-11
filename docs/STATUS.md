@@ -94,22 +94,16 @@ as the `pricing` module.
 
 ## 7. Session handoff — 2026-08-11 EOD → next session (start here)
 
-**Where we are:** Phase A + B complete; **Phase C LIVE** — all 9 modules + frontend on `https://gsiv.phylactery.ovh` (DNS added by user), pricing data imported (16,775 sales), hardening done, full security audit done (backend/SECURITY.md §audit). 238 tests. main @ latest.
+**Where we are:** Phase A + B complete; **Phase C LIVE** — all 9 modules + frontend on `https://gsiv.phylactery.ovh` (243 tests); pricing imported (16,775 sales); hardening + full security audit done (`backend/SECURITY.md` §audit); **Game View LIVE with zero-click streams** (VellumFE patched build). main @ latest.
+
+**Platform inventory:**
+- API: `gsiv.phylactery.ovh` — 10 modules (health, inventory, pricing, gems, healer, characters, accounts, config, analysis, logs) + gameview (stream links) + spec. Admin token for testing: `415a689b-f097-4a0d-a8b7-6545afb84c83` (server .env `AUTH_TOKENS`).
+- Streams: VellumFE (Nisugi upstream, **patched zero-click build**) headless per char — Lich `--detachable-client` (Fisternar 9101, Neleourg 9102), `vellum-fe@<Char>` units (web 9201/9202), Caddy per-char hosts (`<char>.phylactery.ovh` → correct instance; one-level subdomains because Cloudflare Universal SSL only covers one wildcard level). No basic_auth — the pairing token (`#token=` in the stream URL, env `VELLUM_TOKEN`) is the gate. Stream URLs are `#token=<t>&lich=127.0.0.1:<port>&name=<char>` (NOT rhost/rport). Rebuild recipe: `deploy/V2-DEPLOYMENT.md` §VellumFE.
+- Server: v2 at `/opt/gsiv-platform` (systemd `gsiv-platform`); v1 still at `/opt/gs4sd` port 3100.
 
 **Remaining (in order):**
-1. **Lich URL migrations** to `/api/modules/*` (jar seller, healer, characters watchdog, config, accounts) + **retire v1** (port 3100) once confident — the last Phase C item; v1 is still the live Lich integration.
-- Game View — **LIVE (2026-08-11)**: VellumFE (Nisugi beta.37) headless per char on the box, Lich `--detachable-client` attach (Fisternar 9101, Neleourg 9102), Caddy `vellum.phylactery.ovh` + basic_auth, dashboard Watch column via the `gameview` module. See `deploy/V2-DEPLOYMENT.md` §VellumFE.
-3. Dev-only residue: `GET /api/logs` is ported; demo-data reseed tip on dev; stale dev servers (:3102/:5173) kill before redeploy.
+1. **Lich URL migrations** to `/api/modules/*` (jar seller, healer, characters watchdog, config, accounts) + **retire v1** (port 3100) — the last Phase C item; v1 is still the live Lich integration (gs4sd_publisher/gs4sd_streamer scripts). Staged, careful, live-game impact.
+2. **Confirm the zero-click stream flow in a real browser** (user): click a Watch link on the dashboard → should open the stream with no form. Patch is verified server-side (the exact connect message attaches; Fisternar attached in testing).
+3. Streams for more chars when they come online (3-step recipe in the deploy doc).
 
-**If continuing dev:** gate = `cd backend && npm test && npm run typecheck && npm run lint` + `cd frontend && npm run build`. Run backend (`cd backend && AUTH_TOKENS=... npx tsx src/index.ts`) + frontend (`npm run dev`), paste token in the UI. Dev servers may be running from a previous session — kill stale ones first.
-
-**Dev servers left running (user can keep viewing :5173):** backend `:3102` (seeded jars/queue/healer demo data) + Vite `:5173`. Kill before redeploying or if Antigravity needs the ports. Tokens in use: `readtok` (module scopes) / `admintok` (`*`).
-
-**Known env-limited things on dev (NOT bugs):** config go2/eherbs (needs ruby+lich.db3), analysis (needs server scripts + Groq key), inventory (needs inv.db3), pricing (needs sales import), TOTP (set up on Accounts page).
-
-**Open items / loose ends:**
-- `PROJECT_STATE.md` (repo root) is Gemini's design-pass work log — keep or fold into docs.
-- Frontend pages hardcode endpoints matching the real module routes — if a route changes, update the page (see the handoff brief's constraint list). **2026-08-10 late fix:** pricing page crashed because `/pricing/sales` returns paginated `{sales:[]}` not an array — fixed (`20c66bb`); all other pages audited against real response shapes (only pricing was broken).
-- Dev demo data (jars/queue/healer/request) lives in the backend InMemoryKV and was lost on the last restart — re-seed if you want the Jars/Healer boards populated on dev (POST a jar, join the queue, register a healer).
-- `GET /api/logs` (event history) not ported — needs the logEvent core (later item).
-- The `review` subagent works on the D:\ repo; `security_review` does not (see §6).
+**Dev:** gate = `cd backend && npm test && npm run typecheck && npm run lint` + `cd frontend && npm run build`. Run backend (`cd backend && AUTH_TOKENS=... npx tsx src/index.ts`) + frontend (`npm run dev`), paste token in the UI. Kill stale dev servers (:3102/:5173) before redeploying. **Edits to this repo go through bash** (D: path — file tools are confined to the C: workspace).
