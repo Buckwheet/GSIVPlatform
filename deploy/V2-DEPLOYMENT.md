@@ -99,3 +99,10 @@ Headless per-character game streams replacing bucktv's role (dashboard Watch lin
 - Web UI auth: pairing token per data dir (`~/.vellum-fe`, shown at boot: `Web UI: .../play#token=<t>`); pairing is remembered per browser. The UI prefills the Lich-attach form from `#rhost=/#rport=` but deliberately never auto-connects — one Connect click per session.
 - Platform seam: backend `gameview` module (`/api/modules/gameview/streams`, scope `gameview.read`) built from `VELLUM_BASE_URL` + `VELLUM_STREAMS` env; Characters page renders a Watch column (new tab).
 - Scaling: to stream another char, add `--detachable-client=<port>` to its Lich unit (restart — brief disconnect), a `vellum-fe@<Char>` port override, and the `VELLUM_STREAMS` entry.
+- **Rebuild recipe (zero-click auto-connect patch):** the stock web UI only prefills the Lich form (never auto-connects), and the assets are embedded in the binary. To rebuild:
+  1. `sudo apt-get install -y build-essential pkg-config perl curl libasound2-dev libudev-dev libspeechd-dev clang libclang-dev` + Rust (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal`).
+  2. `sudo git clone --depth 1 https://github.com/Nisugi/VellumFE.git /opt/vellumfe-src && sudo chown -R ubuntu:ubuntu /opt/vellumfe-src`.
+  3. Patch `src/frontend/web/assets/app.js`: declare `let autoConnectLich = false`; in the `if (bootLich) {...}` block add `autoConnectLich = true;`; in `setSession()` fire `sendJson("connect", { mode: "lich", host: bootLich.host, port: bootLich.port, character: bootLich.name || null, profile_name: null, custom_launch: null })` when `autoConnectLich && session.session_control && (state === "idle" || "disconnected")` (once).
+  4. `source ~/.cargo/env && cd /opt/vellumfe-src && cargo build --release` (~15-25 min).
+  5. Stop the units, `cp /opt/vellumfe/vellum-fe /opt/vellumfe/vellum-fe.bak-<tag>` (binary is busy while running — stop first), copy `target/release/vellum-fe` over, start the units.
+  6. Stream URLs (gameview module) must use `#lich=<host>:<port>&name=<char>` (NOT rhost/rport — that prefills the Remote tab, not the Lich tab).
