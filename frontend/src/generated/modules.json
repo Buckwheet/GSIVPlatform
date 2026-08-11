@@ -115,6 +115,7 @@
   "scopes": [
     "health.read",
     "logs.read",
+    "gameview.read",
     "inventory.read",
     "pricing.read",
     "pricing.write",
