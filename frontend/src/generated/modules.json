@@ -68,6 +68,17 @@
       ]
     },
     {
+      "id": "your-shops",
+      "path": "/your-shops",
+      "title": "Your Shops",
+      "group": "market",
+      "order": 20,
+      "icon": "🏪",
+      "requiresScopes": [
+        "yourshops.read"
+      ]
+    },
+    {
       "id": "characters",
       "path": "/characters",
       "title": "Characters",
@@ -120,6 +131,8 @@
     "pricing.read",
     "pricing.write",
     "pricing.scrape",
+    "yourshops.read",
+    "yourshops.write",
     "gems.read",
     "gems.write",
     "healer.read",

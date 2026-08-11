@@ -37,6 +37,8 @@ import { createLogsModule } from "./modules/logs/index.js";
 import { createPricingModule } from "./modules/pricing/index.js";
 import { PricingScraper } from "./modules/pricing/scraper.js";
 import { PricingStore } from "./modules/pricing/store.js";
+import { createYourShopsModule } from "./modules/your-shops/index.js";
+import { YourShopsStore } from "./modules/your-shops/store.js";
 
 const registry = new Registry();
 registry.register(healthModule);
@@ -59,6 +61,12 @@ const pricingDb = new CoreDb(process.env.PRICING_DB_PATH || "data/pricing.db");
 const pricingStore = new PricingStore(pricingDb);
 const pricingScraper = new PricingScraper(pricingStore);
 registry.register(createPricingModule(pricingStore, pricingScraper));
+
+// Your Shops: user's shop sales + alerts; reads pricing.db read-only.
+const yourShopsDb = new CoreDb(process.env.YOURSHOPS_DB_PATH || "data/yourshops.db");
+const yourShopsStore = new YourShopsStore(yourShopsDb);
+yourShopsStore.seedDefaultIfEmpty();
+registry.register(createYourShopsModule(yourShopsStore, pricingDb));
 
 const kv = await createKV();
 
