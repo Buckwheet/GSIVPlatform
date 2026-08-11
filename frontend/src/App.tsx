@@ -1,8 +1,8 @@
-import { lazy, Suspense, useEffect, useState, type ComponentType } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { can, clearAuth, loadAuth, type AuthState } from "./core/auth";
 import { startWs, stopWs } from "./core/ws";
-import { NAV_ITEMS } from "./core/manifest";
+import { NAV_COMPONENTS, NAV_ITEMS } from "./core/manifest";
 import { AppShell } from "./shell/AppShell";
 import { TokenGate } from "./shell/TokenGate";
 import { Skeleton } from "./components";
@@ -15,9 +15,9 @@ function PageLoading() {
   );
 }
 
-/** One nav item's page, lazily imported so Vite code-splits per module. */
+/** One nav item's page. The lazy component is prebuilt (see NAV_COMPONENTS). */
 function NavPage({ item, auth }: { item: (typeof NAV_ITEMS)[number]; auth: AuthState }) {
-  const Page = lazy(item.load as () => Promise<{ default: ComponentType<{ auth: AuthState }> }>);
+  const Page = NAV_COMPONENTS[item.id];
   return (
     <Suspense fallback={<PageLoading />}>
       <Page auth={auth} />
