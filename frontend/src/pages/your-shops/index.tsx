@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../core/api";
 import { can, type AuthState } from "../../core/auth";
-import { Button, Table, useToast } from "../../components";
+import { Button, Table, Tabs, useToast } from "../../components";
 
 interface Sale {
   item_id: string;
@@ -36,6 +36,7 @@ export default function YourShops({ auth }: { auth: AuthState }) {
   const [shops, setShops] = useState<Shop[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [newShops, setNewShops] = useState("");
+  const [tab, setTab] = useState("all");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const { addToast } = useToast();
@@ -62,17 +63,40 @@ export default function YourShops({ auth }: { auth: AuthState }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auth]);
 
+  // Per-shop counts for the tab labels.
+  const counts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const s of sales) map.set(s.shop, (map.get(s.shop) ?? 0) + 1);
+    return map;
+  }, [sales]);
+
+  const tabs = useMemo(
+    () => [
+      { id: "all", label: `All (${sales.length})` },
+      ...shops.map((s) => ({ id: s.name, label: `${s.name} (${counts.get(s.name) ?? 0})` })),
+    ],
+    [shops, sales.length, counts],
+  );
+
+  // Fall back to "all" if the active shop was removed from the list.
+  const activeTab = shops.some((s) => s.name === tab) ? tab : "all";
+
+  const visible = useMemo(
+    () => (activeTab === "all" ? sales : sales.filter((s) => s.shop === activeTab)),
+    [sales, activeTab],
+  );
+
   const stats = useMemo(() => {
     const today = daysAgo(0);
     const week = daysAgo(7);
-    const by = (from: number) => sales.filter((s) => new Date(s.removed_date).getTime() >= from);
+    const by = (from: number) => visible.filter((s) => new Date(s.removed_date).getTime() >= from);
     const sum = (rows: Sale[]) => rows.reduce((n, r) => n + (r.cost ?? 0), 0);
     return {
       today: { n: by(today).length, revenue: sum(by(today)) },
       week: { n: by(week).length, revenue: sum(by(week)) },
-      all: { n: sales.length, revenue: sum(sales) },
+      all: { n: visible.length, revenue: sum(visible) },
     };
-  }, [sales]);
+  }, [visible]);
 
   async function saveShops() {
     const names = newShops
@@ -84,6 +108,7 @@ export default function YourShops({ auth }: { auth: AuthState }) {
       await api("/modules/your-shops/shops", auth, { method: "PUT", body: JSON.stringify({ names }) });
       setNewShops("");
       addToast({ tone: "good", title: "Shops updated", message: `${names.length} shop${names.length === 1 ? "" : "s"} tracked.` });
+      setTab("all");
       await load();
     } catch (err) {
       addToast({ tone: "bad", title: "Update failed", message: (err as Error).message });
@@ -128,7 +153,9 @@ export default function YourShops({ auth }: { auth: AuthState }) {
         )}
       </header>
 
-      <div className="tile-grid" style={{ marginBottom: "var(--space-4)" }}>
+      <Tabs tabs={tabs} activeId={activeTab} onChange={setTab} ariaLabel="Filter sales by shop" />
+
+      <div className="tile-grid" style={{ margin: "var(--space-4) 0" }}>
         <div className="card">
           <div className="card-title">Today</div>
           <div className="tile-value">
@@ -157,10 +184,10 @@ export default function YourShops({ auth }: { auth: AuthState }) {
 
       <Table
         columns={columns}
-        rows={sales}
+        rows={visible}
         rowKey={(r) => r.item_id}
-        ariaLabel="Sales from your shops"
-        emptyState="No sales tracked yet."
+        ariaLabel={`Sales from ${activeTab === "all" ? "your shops" : activeTab}`}
+        emptyState={activeTab === "all" ? "No sales tracked yet." : `No sales for ${activeTab} yet.`}
         loading={loading}
       />
     </div>
