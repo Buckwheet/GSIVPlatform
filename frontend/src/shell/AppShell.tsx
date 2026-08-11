@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { can, type AuthState } from "../core/auth";
 import { NAV_GROUPS, NAV_ITEMS } from "../core/manifest";
 import { Button, Badge } from "../components";
+import { Bell } from "./Bell";
 
 interface Props {
   auth: AuthState;
@@ -55,6 +56,7 @@ export function AppShell({ auth, onSignOut }: Props) {
         <header className="topbar">
           <span className="topbar-title muted" style={{ fontSize: "var(--font-size-sm)" }}>GSIV Platform</span>
           <span className="topbar-right">
+            <Bell auth={auth} />
             <span className="muted" style={{ fontSize: "var(--font-size-sm)" }}>{auth.name}</span>
             <Badge
               color="neutral"
