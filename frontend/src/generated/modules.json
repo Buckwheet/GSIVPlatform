@@ -114,6 +114,7 @@
   ],
   "scopes": [
     "health.read",
+    "logs.read",
     "inventory.read",
     "pricing.read",
     "pricing.write",

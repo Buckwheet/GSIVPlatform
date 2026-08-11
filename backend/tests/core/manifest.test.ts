@@ -9,12 +9,14 @@ import { createGemsModule } from "../../src/modules/gems/index.js";
 import { createHealerModule } from "../../src/modules/healer/index.js";
 import { healthModule } from "../../src/modules/health/index.js";
 import { createInventoryModule } from "../../src/modules/inventory/index.js";
+import { createLogsModule } from "../../src/modules/logs/index.js";
 import { createPricingModule } from "../../src/modules/pricing/index.js";
 
 /** Same registry wiring the generator script uses: dummy deps, metadata only. */
 function fullRegistry(): Registry {
   const registry = new Registry();
   registry.register(healthModule);
+  registry.register(createLogsModule(undefined as never));
   registry.register(createInventoryModule(undefined as never));
   registry.register(createPricingModule(undefined as never, undefined as never));
   registry.register(createGemsModule(undefined as never));
