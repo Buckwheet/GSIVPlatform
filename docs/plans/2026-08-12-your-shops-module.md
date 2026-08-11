@@ -531,7 +531,7 @@ export function createYourShopsModule(store: YourShopsStore, pricingDb: CoreDb):
 - [ ] **Step 4: Run it — expect PASS**
 
 Run: `cd backend && npx vitest run tests/modules/your-shops/routes.test.ts`
-Expected: 7 passing.
+Expected: 6 passing.
 
 - [ ] **Step 5: Commit**
 
