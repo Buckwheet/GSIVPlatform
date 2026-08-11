@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, ApiError } from "../../core/api";
 import { can, type AuthState } from "../../core/auth";
+import { Card, Button, Input, useToast } from "../../components";
 
 export default function Analysis({ auth }: { auth: AuthState }) {
   const [analysis, setAnalysis] = useState<{ output: string; status: string; usage: unknown } | null>(null);
@@ -8,6 +9,10 @@ export default function Analysis({ auth }: { auth: AuthState }) {
   const [error, setError] = useState<string | null>(null);
   const [logFile, setLogFile] = useState<File | null>(null);
   const [uploadChar, setUploadChar] = useState("GSIV-Mejora");
+  const [running, setRunning] = useState(false);
+  const [looping, setLooping] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const { addToast } = useToast();
   const write = can(auth, ["analysis.write"]);
 
   async function refresh() {
@@ -31,18 +36,32 @@ export default function Analysis({ auth }: { auth: AuthState }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auth]);
 
-  async function kick(path: string) {
+  async function kick(path: string, type: "run" | "loop") {
+    if (type === "run") setRunning(true);
+    else setLooping(true);
+
     try {
       await api(path, auth, { method: "POST", body: "{}" });
-      setTimeout(() => void refresh(), 2_000);
+      addToast({
+        tone: "good",
+        title: type === "run" ? "Analysis Started" : "Shiva Loop Started",
+        message: "Successfully triggered combat log analysis script.",
+      });
+      setTimeout(() => void refresh().then(() => {
+        setRunning(false);
+        setLooping(false);
+      }), 2_000);
     } catch (err) {
       setError((err as Error).message);
+      setRunning(false);
+      setLooping(false);
     }
   }
 
   async function upload(e: FormEvent) {
     e.preventDefault();
     if (!logFile) return;
+    setUploading(true);
     const form = new FormData();
     form.append("file", logFile);
     form.append("character", uploadChar);
@@ -51,48 +70,122 @@ export default function Analysis({ auth }: { auth: AuthState }) {
         method: "POST",
         body: form,
       });
-      setError(res.ok ? `uploaded ${res.size} bytes → ${res.path}` : "upload failed");
+      if (res.ok) {
+        addToast({
+          tone: "good",
+          title: "Log Uploaded",
+          message: `Uploaded ${res.size} bytes → ${res.path}`,
+        });
+        setError(null);
+      } else {
+        setError("upload failed");
+      }
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "upload failed");
+      const msg = err instanceof ApiError ? err.message : "upload failed";
+      setError(msg);
+      addToast({
+        tone: "bad",
+        title: "Upload Failed",
+        message: msg,
+      });
+    } finally {
+      setUploading(false);
     }
   }
 
   return (
     <div>
-      <h1>Analysis</h1>
-      <p className="muted">Combat log analysis via the server-side scripts.</p>
-      {error && <p className="error">{error}</p>}
-      {write && (
-        <div className="toolbar">
-          <button className="btn" onClick={() => void kick("/modules/analysis/analysis/run")}>Run analysis</button>
-          <button className="btn" onClick={() => void kick("/modules/analysis/analysis/loop")}>Shiva loop</button>
+      <header className="page-header">
+        <div>
+          <h1 className="page-header-title">Analysis</h1>
+          <p className="muted" style={{ margin: "var(--space-1) 0 0 0" }}>
+            Combat log analysis via the server-side scripts.
+          </p>
+        </div>
+        {write && (
+          <div className="page-header-actions">
+            <Button disabled={running} onClick={() => kick("/modules/analysis/analysis/run", "run")} ariaLabel="Run analysis script">
+              {running ? "Starting..." : "Run analysis"}
+            </Button>
+            <Button disabled={looping} onClick={() => kick("/modules/analysis/analysis/loop", "loop")} ariaLabel="Run Shiva loop script">
+              {looping ? "Looping..." : "Shiva loop"}
+            </Button>
+          </div>
+        )}
+      </header>
+
+      {error && (
+        <div style={{ marginBottom: "var(--space-4)", padding: "var(--space-3)", background: "var(--tint-bad)", border: "1px solid var(--bad)", borderRadius: "var(--radius-sm)", color: "var(--text-strong)" }}>
+          <strong>Error:</strong> {error}
         </div>
       )}
 
-      <div className="board-row">
-        <section className="panel board-panel">
-          <h2 className="section-title">Status</h2>
-          <p className="muted">{analysis?.status || "—"}</p>
-          {analysis?.usage ? <p className="muted">usage: {JSON.stringify(analysis.usage)}</p> : null}
-        </section>
-        <form className="panel board-panel" onSubmit={upload}>
-          <h2 className="section-title">Upload combat log</h2>
-          <input type="file" accept=".log" onChange={(e) => setLogFile(e.target.files?.[0] ?? null)} />
-          <input placeholder="character (default GSIV-Mejora)" value={uploadChar} onChange={(e) => setUploadChar(e.target.value)} />
-          <button className="btn" type="submit" disabled={!logFile || !write}>Upload</button>
-          {!write && <p className="muted">read-only (no analysis.write)</p>}
-        </form>
+      <div className="board-row" style={{ marginBottom: "var(--space-4)" }}>
+        <Card title="Status" ariaLabel="Analysis script run status">
+          <p style={{ margin: 0, fontWeight: "bold" }}>{analysis?.status || "—"}</p>
+          {analysis?.usage ? (
+            <div style={{ marginTop: "var(--space-2)" }}>
+              <span className="muted" style={{ fontSize: "var(--font-size-xs)" }}>Usage:</span>
+              <pre style={{ margin: "var(--space-1) 0 0 0", fontSize: "var(--font-size-xs)" }}>
+                {JSON.stringify(analysis.usage, null, 2)}
+              </pre>
+            </div>
+          ) : null}
+        </Card>
+
+        <Card title="Upload combat log" ariaLabel="Upload combat log file form">
+          <form onSubmit={upload} style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
+              <label className="gs-input__label" htmlFor="combatLogFile">Combat Log File (.log)</label>
+              <input
+                id="combatLogFile"
+                type="file"
+                accept=".log"
+                onChange={(e) => setLogFile(e.target.files?.[0] ?? null)}
+                style={{
+                  background: "var(--input-bg)",
+                  border: "1px solid var(--border-strong)",
+                  color: "var(--text)",
+                  borderRadius: "var(--radius-sm)",
+                  padding: "var(--space-2)",
+                  fontSize: "var(--font-size-sm)",
+                }}
+              />
+            </div>
+            <Input
+              id="uploadChar"
+              label="Character (default GSIV-Mejora)"
+              value={uploadChar}
+              onChange={setUploadChar}
+            />
+            {write ? (
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  disabled={!logFile || uploading}
+                  loading={uploading}
+                  ariaLabel="Upload selected combat log"
+                >
+                  Upload
+                </Button>
+              </div>
+            ) : (
+              <p className="muted" style={{ margin: 0, fontSize: "var(--font-size-xs)" }}>read-only (no analysis.write)</p>
+            )}
+          </form>
+        </Card>
       </div>
 
-      <section className="panel board-panel">
-        <h2 className="section-title">Output</h2>
-        <pre className="output">{analysis?.output || "(no output yet)"}</pre>
-      </section>
+      <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
+        <Card title="Output" ariaLabel="Analysis script execution console output">
+          <pre className="output" style={{ margin: 0 }}>{analysis?.output || "(no output yet)"}</pre>
+        </Card>
 
-      <section className="panel board-panel">
-        <h2 className="section-title">History ({history.length})</h2>
-        <pre className="output">{JSON.stringify(history, null, 2) || "[]"}</pre>
-      </section>
+        <Card title={`History (${history.length})`} ariaLabel="Analysis script history log">
+          <pre className="output" style={{ margin: 0 }}>{JSON.stringify(history, null, 2) || "[]"}</pre>
+        </Card>
+      </div>
     </div>
   );
 }

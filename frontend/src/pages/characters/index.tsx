@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../../core/api";
 import { can, type AuthState } from "../../core/auth";
 import type { CharacterRow } from "../../core/types";
+import { Table, StatusDot, Button, useToast } from "../../components";
 
 const POLL_MS = 15_000; // polling fallback (ws-data-pattern.md §8) until the WS layer lands
 
@@ -9,6 +10,7 @@ export default function Characters({ auth }: { auth: AuthState }) {
   const [rows, setRows] = useState<CharacterRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const { addToast } = useToast();
   const write = can(auth, ["characters.write"]);
 
   async function refresh() {
@@ -31,59 +33,111 @@ export default function Characters({ auth }: { auth: AuthState }) {
     setBusy(name);
     try {
       await api<{ ok: boolean }>(`/modules/characters/characters/${encodeURIComponent(name)}/${action}`, auth, { method: "POST" });
+      addToast({
+        tone: "good",
+        title: `Lich Session ${action}ed`,
+        message: `Successfully sent ${action} command for character ${name}.`,
+      });
       await refresh();
     } catch (err) {
-      setError((err as Error).message);
+      const msg = (err as Error).message;
+      setError(msg);
+      addToast({
+        tone: "bad",
+        title: `Failed to ${action} Character`,
+        message: msg,
+      });
     } finally {
       setBusy(null);
     }
   }
 
+  const columns = [
+    { key: "char_name", header: "Name", sortable: true },
+    {
+      key: "active",
+      header: "Status",
+      sortable: true,
+      render: (r: CharacterRow) => (
+        <StatusDot
+          color={r.active ? "good" : "neutral"}
+          label={r.active ? "online" : "offline"}
+        />
+      ),
+    },
+    { key: "sub", header: "Sub", sortable: true },
+    {
+      key: "uptime",
+      header: "Uptime",
+      sortable: true,
+      render: (r: CharacterRow) => (r.uptime != null ? `${Math.round(r.uptime / 60)}m` : "—"),
+    },
+    {
+      key: "managed",
+      header: "Managed",
+      sortable: true,
+      render: (r: CharacterRow) => (r.managed ? "yes" : "no"),
+    },
+    ...(write
+      ? [
+          {
+            key: "actions",
+            header: "Actions",
+            render: (r: CharacterRow) => (
+              <div className="row-actions">
+                <Button
+                  size="sm"
+                  disabled={busy === r.char_name || r.active}
+                  onClick={() => act(r.char_name, "start")}
+                  ariaLabel={`Start session for ${r.char_name}`}
+                >
+                  Start
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={busy === r.char_name || !r.active}
+                  onClick={() => act(r.char_name, "stop")}
+                  ariaLabel={`Stop session for ${r.char_name}`}
+                >
+                  Stop
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={busy === r.char_name || !r.active}
+                  onClick={() => act(r.char_name, "restart")}
+                  ariaLabel={`Restart session for ${r.char_name}`}
+                >
+                  Restart
+                </Button>
+              </div>
+            ),
+          },
+        ]
+      : []),
+  ];
+
   return (
     <div>
-      <h1>Characters</h1>
-      <p className="muted">Headless Lich sessions · status polled every {POLL_MS / 1000}s (WS pending).</p>
-      {error && <p className="error">{error}</p>}
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Status</th>
-            <th>Sub</th>
-            <th>Uptime</th>
-            <th>Managed</th>
-            {write && <th>Actions</th>}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.char_name}>
-              <td>{r.char_name}</td>
-              <td>
-                <span className={`status-dot ${r.active ? "good" : "muted"}`} title={r.active ? "online" : "offline"} />
-                {r.active ? "online" : "offline"}
-              </td>
-              <td>{r.sub}</td>
-              <td>{r.uptime != null ? `${Math.round(r.uptime / 60)}m` : "—"}</td>
-              <td>{r.managed ? "yes" : "no"}</td>
-              {write && (
-                <td className="row-actions">
-                  <button className="btn" disabled={busy === r.char_name || r.active} onClick={() => act(r.char_name, "start")}>
-                    Start
-                  </button>
-                  <button className="btn" disabled={busy === r.char_name || !r.active} onClick={() => act(r.char_name, "stop")}>
-                    Stop
-                  </button>
-                  <button className="btn" disabled={busy === r.char_name || !r.active} onClick={() => act(r.char_name, "restart")}>
-                    Restart
-                  </button>
-                </td>
-              )}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {!rows.length && !error && <p className="muted">No characters in entry.yaml.</p>}
+      <header className="page-header" style={{ flexDirection: "column" }}>
+        <h1 className="page-header-title">Characters</h1>
+        <p className="muted" style={{ margin: "var(--space-1) 0 0 0" }}>
+          Headless Lich sessions · status polled every {POLL_MS / 1000}s (WS pending).
+        </p>
+      </header>
+      
+      {error && (
+        <div style={{ marginBottom: "var(--space-4)", padding: "var(--space-3)", background: "var(--tint-bad)", border: "1px solid var(--bad)", borderRadius: "var(--radius-sm)", color: "var(--text-strong)" }}>
+          <strong>Error:</strong> {error}
+        </div>
+      )}
+
+      <Table
+        columns={columns}
+        rows={rows}
+        rowKey={(r) => r.char_name}
+        ariaLabel="Lich character sessions"
+        emptyState="No characters configured in entry.yaml."
+      />
     </div>
   );
 }

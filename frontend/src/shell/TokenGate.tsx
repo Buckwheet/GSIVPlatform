@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, ApiError } from "../core/api";
-import { can, loadAuth, saveAuth, type AuthState } from "../core/auth";
+import { loadAuth, saveAuth, type AuthState } from "../core/auth";
+import { Card, Input, Button } from "../components";
 
 interface Props {
   auth: AuthState | null;
@@ -43,27 +44,46 @@ export function TokenGate({ auth, onAuth }: Props) {
 
   return (
     <div className="token-gate">
-      <div className="token-card panel">
-        <h1>GSIV Platform</h1>
-        <p className="muted">Enter an API token (from the server&apos;s AUTH_TOKENS) to connect.</p>
+      <Card
+        title="◎ GSIV Platform"
+        padding="default"
+        ariaLabel="Token authentication entry"
+        footer={
+          <p className="hint muted">
+            Scopes are read from <code>/api/me</code>; nav items appear for scopes your token holds.
+          </p>
+        }
+      >
+        <p className="muted" style={{ marginTop: 0, marginBottom: "var(--space-4)" }}>
+          Enter an API token (from the server&apos;s AUTH_TOKENS) to connect and manage resources.
+        </p>
         <form onSubmit={submit}>
-          <input
+          <Input
+            id="token"
             type="password"
             value={token}
-            onChange={(e) => setToken(e.target.value)}
+            onChange={setToken}
             placeholder="token"
             autoFocus
             autoComplete="off"
+            invalid={!!error}
+            errorText={error || undefined}
+            label="API Auth Token"
           />
-          <button type="submit" disabled={busy || !token.trim()}>
-            {busy ? "Connecting…" : "Connect"}
-          </button>
+          <div style={{ marginTop: "var(--space-3)" }}>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={!token.trim()}
+              loading={busy}
+              ariaLabel="Connect to platform"
+              style={{ width: "100%" }}
+            >
+              Connect
+            </Button>
+          </div>
         </form>
-        {error && <p className="error">{error}</p>}
-        <p className="hint muted">
-          Scopes are read from <code>/api/me</code>; nav items appear for scopes your token holds.
-        </p>
-      </div>
+      </Card>
     </div>
   );
 }
