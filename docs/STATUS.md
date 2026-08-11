@@ -99,15 +99,18 @@ as the `pricing` module.
 **Platform inventory:**
 - API: `gsiv.phylactery.ovh` — 11 modules (health, inventory, pricing, gems, healer, characters, accounts, config, analysis, logs, **lich**) + gameview + spec. Admin token: `415a689b-f097-4a0d-a8b7-6545afb84c83`; **machine token** `abdb3594-b6dd-4eef-89de-b083197f6798` (gems/healer/characters/pricing/lich read+write) — both in server .env `AUTH_TOKENS`.
 - Lich integration: **all on v2** — publisher/premium/jarrer/post to `/api/modules/lich/*` + `/api/modules/gems/*`; units env `GS4SD_URL=http://localhost:3102`, `GS4SD_TOKEN=<machine>`, `gs4sd_streamer` dropped (BuckTV retired); watchdog timer + invdb scanner on v2 with the machine token. Watchdog restarts are gated on `systemctl is-enabled` (only Fisternar/Neleourg enabled — do NOT enable other units casually or the watchdog will start them).
-- Streams: VellumFE headless per char — Lich `--detachable-client` (Fisternar 9101, Neleourg 9102), `vellum-fe@<Char>` units (web 9201/9202), Caddy `<char>.phylactery.ovh`; URL `#token=<t>&lich=127.0.0.1:<port>&name=<char>`; no basic_auth. Rebuild recipe: `deploy/V2-DEPLOYMENT.md` §VellumFE.
+- Streams: VellumFE headless per char — Lich `--detachable-client` (Fisternar 9101, Neleourg 9102), `vellum-fe@<Char>` units (web 9201/9202), Caddy `<char>.phylactery.ovh`; URL `#token=<t>&lich=127.0.0.1:<port>&name=<char>`; no basic_auth. app.js carries two GSIVPlatform patches (zero-click auto-connect; form-flash suppression, 2026-08-12). Rebuild recipe: `deploy/V2-DEPLOYMENT.md` §VellumFE.
 - Lich + Ruby: **Lich v5.19.1** (git tag at `/opt/gs4sd/lich5`) on **rbenv Ruby 4.0.6** (`/home/ubuntu/.rbenv/versions/4.0.6/bin/ruby` in all Lich units; Ubuntu apt Ruby 3.2 is too old for 5.19). Upgrade/rollback recipe: `deploy/V2-DEPLOYMENT.md` §Lich + Ruby upgrade. `bundle install` with the full Gemfile (78 gems, no exclusions).
 - v1 retired: `gs4sd-backend.service` + `gs4-sales-backend.service` stopped+disabled; ports 3100/3200 free; Caddy `dashboard.phylactery.ovh` + `sales.phylactery.ovh` → 301 to gsiv (fishbyte + bucktv still under the dashboard host); `/opt/gs4sd` files kept for rollback (Lich runtime lives there). `ebounty_tracker.lic` + `gs4sd_streamer.lic` have no v2 home (retired).
 
 **Testing rule: only Fisternar + Neleourg.** Amn is off-limits for any testing (no throwaway test char); verify changes on the live pair with brief restarts (user-approved).
 
 **Remaining (in order):**
-1. **Confirm the zero-click stream flow in a real browser** (user): click a Watch link on the dashboard → stream opens with no form.
-2. **Stream more chars** when they come online (3-step recipe in `deploy/V2-DEPLOYMENT.md` §VellumFE).
-3. (Optional) port `ebounty_tracker.lic` (`/api/bounty/*`) into v2 if wanted.
+1. **Stream more chars** when they come online (3-step recipe in `deploy/V2-DEPLOYMENT.md` §VellumFE).
+2. (Optional) port `ebounty_tracker.lic` (`/api/bounty/*`) into v2 if wanted.
+
+**Done since this handoff (2026-08-12):**
+- **Zero-click Watch confirmed in a real browser** (user): dashboard/Characters Watch link opens the stream with no manual Connect.
+- **Login-form flash fixed**: the stream opened but the stock attach form flashed for a split second before auto-connect. Patched VellumFE `app.js` (hide the attach form while the zero-click connect is in flight, show "Connecting…" instead; form restored on error) → `cargo build --release` → swapped `/opt/vellumfe/vellum-fe` (backups: `vellum-fe.bak-beta37`, `vellum-fe.bak-2026-08-12`, `app.js.bak-2026-08-12`) → restarted `vellum-fe@Fisternar`/`@Neleourg`. Verified: streams `up:true`, HTTPS 200s.
 
 **Dev:** gate = `cd backend && npm test && npm run typecheck && npm run lint` + `cd frontend && npm run build`. Run backend (`cd backend && AUTH_TOKENS=... npx tsx src/index.ts`) + frontend (`npm run dev`), paste token in the UI. Kill stale dev servers (:3102/:5173) before redeploying. **Edits to this repo go through bash** (D: path — file tools are confined to the C: workspace). Redeploy recipe + lich module docs: `deploy/V2-DEPLOYMENT.md` (§Lich migration).
