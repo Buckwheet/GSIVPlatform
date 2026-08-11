@@ -9,7 +9,7 @@ import { InMemoryKV } from "../../src/core/kv.js";
 import { Registry } from "../../src/core/registry.js";
 import { createApp } from "../../src/core/server.js";
 import { EventBus } from "../../src/core/ws.js";
-import { createWsBridge } from "../../src/core/ws-bridge.js";
+import { createWsBridge, isAllowedOrigin } from "../../src/core/ws-bridge.js";
 import { healthModule } from "../../src/modules/health/index.js";
 
 describe("ws bridge", () => {
@@ -73,5 +73,21 @@ describe("ws bridge", () => {
     ws.send("ping");
     expect(await pong).toBe("pong");
     ws.close();
+  });
+});
+
+describe("WS origin check", () => {
+  it("accepts the production origin and local dev origins", () => {
+    expect(isAllowedOrigin("https://gsiv.phylactery.ovh")).toBe(true);
+    expect(isAllowedOrigin("http://localhost:5173")).toBe(true);
+    expect(isAllowedOrigin("http://127.0.0.1:5173")).toBe(true);
+  });
+
+  it("rejects cross-origin and spoofed-ish origins", () => {
+    expect(isAllowedOrigin("https://evil.example.com")).toBe(false);
+    expect(isAllowedOrigin("https://gsiv.phylactery.ovh.evil.com")).toBe(false);
+    expect(isAllowedOrigin("http://localhost:9999")).toBe(false);
+    expect(isAllowedOrigin("null")).toBe(false);
+    expect(isAllowedOrigin(undefined)).toBe(true); // non-browser clients: token auth still applies
   });
 });

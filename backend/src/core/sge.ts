@@ -28,13 +28,31 @@ const SGE_HOST = "eaccess.play.net";
 const SGE_PORT = 7910;
 const TIMEOUT_MS = 15_000;
 
+const SGE_CERT_PIN = "10:B7:37:E6:61:98:7D:15:BC:5C:82:45:E3:F8:B7:82:91:D4:1E:D8:AB:C7:66:72:EC:B0:2F:E7:8E:D0:21:8A";
+
+/** True when the peer certificate matches the pinned Simutronics cert (see below). */
+export function matchesPinnedCert(cert: { fingerprint256?: string } | undefined | null): boolean {
+  return cert?.fingerprint256 === SGE_CERT_PIN;
+}
+
 function defaultConnect(
   host: string,
   port: number,
   onData: (d: Buffer) => void,
   onError: (err: Error) => void,
 ): SgeSocket {
-  const sock = tls.connect({ host, port, rejectUnauthorized: false }, () => sock.write("K"));
+  const sock = tls.connect({ host, port, rejectUnauthorized: false }, () => {
+    // eaccess.play.net serves a self-signed cert (Simutronics, valid to 3017), so
+    // normal verification can't be enabled — pin the exact fingerprint instead, so
+    // a MITM cannot substitute their own cert. Update the pin only if Simutronics
+    // ever rotates it. (The SGE protocol additionally masks the password on the wire.)
+    if (!matchesPinnedCert(sock.getPeerCertificate())) {
+      onError(new Error("SGE certificate fingerprint mismatch"));
+      sock.destroy();
+      return;
+    }
+    sock.write("K");
+  });
   sock.on("data", onData);
   sock.on("error", onError);
   return { write: (d, enc) => sock.write(d, enc), destroy: () => sock.destroy() };
