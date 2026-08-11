@@ -1,4 +1,5 @@
-import { copyFileSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { parse as parseYaml, stringify } from "yaml";
 import { validateCharName } from "./systemd.js";
 
@@ -94,7 +95,26 @@ export class EntryYaml {
   write(content: string): void {
     const backup = `${this.path}.bak.${Date.now()}`;
     copyFileSync(this.path, backup);
+    this.rotateBackups();
     writeFileSync(this.path, content);
+  }
+
+  /** Keep only the 5 newest .bak copies of the entry.yaml. */
+  private rotateBackups(): void {
+    const dir = dirname(this.path);
+    const base = `${basename(this.path)}.bak.`;
+    const num = (f: string) => Number.parseInt(f.slice(base.length), 10) || 0;
+    const backups = readdirSync(dir)
+      .filter((f) => f.startsWith(base))
+      .sort((a, b) => num(a) - num(b));
+    const keep = 5;
+    for (const old of backups.slice(0, Math.max(0, backups.length - keep))) {
+      try {
+        rmSync(join(dir, old));
+      } catch {
+        // best effort — a failed prune must not fail the write
+      }
+    }
   }
 
   private writeDoc(doc: YamlDoc): void {

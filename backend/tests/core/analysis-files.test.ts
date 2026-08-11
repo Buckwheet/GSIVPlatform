@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -35,6 +35,35 @@ describe("AnalysisFiles capability", () => {
     expect(await af.readHistory()).toEqual([{ id: 1 }]);
     const fresh = new AnalysisFiles({ dataDir: join(TMP, "empty"), logDir: LOGS });
     expect(await fresh.readHistory()).toEqual([]);
+  });
+
+  it("uploadLog rejects when the char dir is a symlink (escape attempt)", async () => {
+    const outside = join(TMP, "outside-upload");
+    mkdirSync(outside, { recursive: true });
+    mkdirSync(join(DATA, "mejora-logs"), { recursive: true });
+    const link = join(DATA, "mejora-logs", "Evilchar");
+    try {
+      symlinkSync(outside, link, process.platform === "win32" ? "junction" : "dir");
+    } catch {
+      return; // no symlink privilege on this host — skip
+    }
+    const res = await af.uploadLog("Evilchar", "x.log", Buffer.from("x"));
+    expect(res.ok).toBe(false);
+    expect(existsSync(join(outside, "x.log"))).toBe(false); // nothing written outside
+  });
+
+  it("tailGameLog skips symlinked .log entries", async () => {
+    const outside = join(TMP, "outside-log.txt");
+    writeFileSync(outside, "LEAKED");
+    const link = join(LOGS, "GSIV-Fisternar", "2026", "08", "evil.log");
+    try {
+      symlinkSync(outside, link, "file");
+    } catch {
+      return; // no file-symlink privilege on this host — skip
+    }
+    const res = await af.tailGameLog("Fisternar", 100);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.lines.join("\n")).not.toContain("LEAKED");
   });
 
   it("uploadLog sanitizes names, mkdirs YYYY/MM, and writes the buffer", async () => {

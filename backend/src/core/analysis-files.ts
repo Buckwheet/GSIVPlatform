@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { validateCharName } from "./systemd.js";
 
@@ -58,13 +58,19 @@ export class AnalysisFiles {
     const name = fileName.replace(/[^a-zA-Z0-9._-]/g, "");
     if (!name.endsWith(".log") || name === ".log") return { ok: false, code: "bad_name" };
     const now = new Date();
-    const dir = join(
-      this.opts.dataDir,
-      "mejora-logs",
-      character,
-      String(now.getFullYear()),
-      String(now.getMonth() + 1).padStart(2, "0"),
-    );
+    const rel = ["mejora-logs", character, String(now.getFullYear()), String(now.getMonth() + 1).padStart(2, "0")];
+    // Symlink containment: a symlinked mejora-logs/char dir could redirect the
+    // upload outside ANALYYSIS_DATA_DIR — reject any existing symlink component.
+    let cur = this.opts.dataDir;
+    for (const seg of rel) {
+      cur = join(cur, seg);
+      try {
+        if (lstatSync(cur).isSymbolicLink()) return { ok: false, code: "bad_name" };
+      } catch {
+        break; // fresh dirs we create below
+      }
+    }
+    const dir = join(this.opts.dataDir, ...rel);
     mkdirSync(dir, { recursive: true });
     const dest = join(dir, name);
     writeFileSync(dest, buffer);
@@ -83,10 +89,16 @@ export class AnalysisFiles {
       `${LOG_DIR_PREFIX}${char.charAt(0).toUpperCase() + char.slice(1).toLowerCase()}`,
     );
     if (!existsSync(dir)) return { ok: true, lines: [], file: null };
+    try {
+      if (lstatSync(dir).isSymbolicLink()) return { ok: true, lines: [], file: null };
+    } catch {
+      // raced with removal — treat as missing
+    }
     let latest = "";
     let latestMtime = 0;
     const walk = (d: string): void => {
       for (const e of readdirSync(d, { withFileTypes: true })) {
+        if (e.isSymbolicLink()) continue;
         if (e.isDirectory()) {
           walk(join(d, e.name));
         } else if (e.name.endsWith(".log")) {
