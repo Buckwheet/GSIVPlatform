@@ -8,6 +8,7 @@ export interface NavItem {
   order: number;
   icon: string;
   requiresScopes: Scope[];
+  load: () => Promise<unknown>; // lazy page import (static import fn, see core/manifest.ts)
   external?: boolean;
 }
 

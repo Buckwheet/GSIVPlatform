@@ -134,6 +134,7 @@ export function createInventoryModule(store: InventoryStore): Module {
     name: "inventory",
     prefix: "/api/modules/inventory",
     scopes: [{ name: "inventory.read", description: "Read character inventory, bank, resources, tickets" }],
+    nav: { path: "/inventory", title: "Inventory", group: "operations", order: 10, icon: "🎒" },
     routeScopes: {
       "GET /summary": ["inventory.read"],
       "GET /characters": ["inventory.read"],

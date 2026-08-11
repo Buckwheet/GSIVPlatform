@@ -218,6 +218,7 @@ export function createAccountsModule(store: AccountsStore, totp: Totp): Module {
       { name: "accounts.read", description: "Read accounts, scan results, TOTP status" },
       { name: "accounts.write", description: "Scan accounts, manage entry.yaml (TOTP-gated), TOTP setup" },
     ],
+    nav: { path: "/accounts", title: "Accounts", group: "people", order: 20, icon: "👥" },
     routeScopes: {
       "GET /accounts": ["accounts.read"],
       "GET /accounts/scan/status": ["accounts.read"],

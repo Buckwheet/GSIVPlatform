@@ -14,7 +14,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
-    "format": "biome format --write ."
+    "format": "biome format --write .",
+    "gen:manifest": "tsx scripts/gen-frontend-manifest.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.0",

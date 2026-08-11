@@ -205,6 +205,7 @@ export function createPricingModule(store: PricingStore, scraper: PricingScraper
       { name: "pricing.write", description: "Create listings" },
       { name: "pricing.scrape", description: "Trigger the removed-items scraper" },
     ],
+    nav: { path: "/pricing", title: "Pricing", group: "market", order: 10, icon: "🏷️" },
     routeScopes: {
       "GET /status": ["pricing.read"],
       "GET /sales": ["pricing.read"],
