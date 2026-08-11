@@ -103,3 +103,35 @@ delta, and a security_review pass before merge.
 - `ANALYSIS_DATA_DIR`/`LICH_LOG_DIR` envs, never hardcoded in commits (defaults mirror v1).
 - Not ported: v1 `GET /api/logs` (event history — needs the logEvent core, a later item); the analysis shell scripts themselves should be reviewed server-side separately (they run as the service user).
 - **Known trade-offs (v1-faithful):** upload response includes the absolute destination path (v1 behavior); no symlink/realpath containment on the upload dir (same gap as config-files, documented); file reads are synchronous on the request path (small files, v1 behavior). Script kickoff is fire-and-forget with the child unref'd and NO timeout (analysis runs for minutes — v1 semantics).
+
+## Full-platform audit (2026-08-11)
+
+Whole-tree review (manual + subagent) after internet exposure. Findings + disposition:
+
+**Fixed (this session, PRs #19 #22):**
+- Symlink containment: config-files (incl. char-dir root), analysis upload/tail — a
+  symlinked path component can no longer redirect reads/writes outside the root.
+- 1 MiB write cap on config files; `.bak` rotation (newest 5) in config-files + entry-yaml.
+- PasswordCipher plaintext via STDIN (spawn), never ARGV (`ps` disclosure); EPIPE-safe.
+- SGE (eaccess.play.net:7910) cert PINNED — server uses a self-signed Simutronics cert
+  (valid to 3017); `rejectUnauthorized:false` stays, but only the pinned fingerprint is
+  accepted, so a MITM cannot substitute a cert. Password additionally masked per-protocol.
+- WS origin allow-list (prod + dev origins) — blocks cross-site WS hijacking / DNS rebinding;
+  `?token=` auth retained (browsers can't set WS headers). Verified live: evil origin → 4403.
+- TOTP setup/reset now emit audit events to `/api/logs`. (Inherent residual: on a FRESH
+  install, the first `/totp/setup` (accounts.write) seizes the gate; once configured,
+  setup 400s and reset requires the current code.)
+- `@hono/node-server` ^1.13 → ^2.1.0 — cleared the only dependency advisory
+  (serve-static path traversal; was unreachable — the app never imports serve-static).
+
+**Verified clean:** no secrets in repo (`changeme` placeholder only in gitignored .env.example);
+no frontend XSS sinks; all route input zod-validated; all SQL parameterized; exec paths use
+fixed templates + argv with strict char validation; pricing scraper fetches only hardcoded URLs.
+
+**Accepted / documented residuals (low):**
+- No CSP/HSTS headers on the origin (Cloudflare edge provides TLS; add CSP when a non-CF host is used).
+- Auth-failure path (/api/me) is unthrottled — tokens are 128-bit UUIDs; brute force infeasible.
+- Token in localStorage (SPA standard; no XSS sinks so no exfil path today).
+- KV rate limiter is non-atomic per instance (single-instance deploy — fine).
+- WS token rides in the URL query (browser limitation); logs/proxies see it; short-lived WS ticket
+  is the future improvement.
