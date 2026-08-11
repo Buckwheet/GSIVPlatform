@@ -93,7 +93,7 @@ export function createGameviewModule(opts: {
           const host = opts.streamDomain
             ? `${char.toLowerCase()}.${opts.streamDomain}`
             : base.slice(base.indexOf("://") + 3);
-          const url = `https://${host}/play#${frag}rhost=127.0.0.1&rport=${detach}`;
+          const url = `https://${host}/play#${frag}lich=127.0.0.1:${detach}&name=${char}`;
           out[char] = { url, up: await probe(web) };
         }
         return c.json(out);
