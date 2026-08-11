@@ -104,3 +104,4 @@ const app = createApp({ registry, kv, db, auth, eventBus });
 const port = Number(process.env.PORT || 3100);
 const server = serve({ fetch: app.fetch, port }, () => console.log(`gsiv-platform listening on :${port}`));
 createWsBridge(server, auth, eventBus);
+eventLog.log("server_start", null, "gsiv-platform started");
