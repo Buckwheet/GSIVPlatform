@@ -16,7 +16,7 @@ export default function Inventory({ auth }: { auth: AuthState }) {
 
   async function refresh() {
     try {
-      const path = q ? `/modules/inventory/items?q=${encodeURIComponent(q)}` : "/modules/inventory/items";
+      const path = `/modules/inventory/search${q ? `?q=${encodeURIComponent(q)}` : ""}`;
       setRows(await api<InvRow[]>(path, auth));
       setError(null);
     } catch (err) {

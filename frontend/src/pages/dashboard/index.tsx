@@ -29,7 +29,7 @@ const TILES: TileDef[] = [
     id: "jars",
     title: "Jars",
     icon: "🫙",
-    path: "/characters",
+    path: "/jars",
     scope: "gems.read",
     fetch: async (a) => {
       const jars = await api<{ full_jar_count: number }[]>("/modules/gems/jars", a);
@@ -41,7 +41,7 @@ const TILES: TileDef[] = [
     id: "healer",
     title: "Healer",
     icon: "⛑️",
-    path: "/characters",
+    path: "/healer",
     scope: "healer.read",
     fetch: async (a) => {
       const status = await api<{ pending: number; healers: unknown[] }>("/modules/healer/status", a);
@@ -52,7 +52,7 @@ const TILES: TileDef[] = [
     id: "accounts",
     title: "Accounts",
     icon: "👥",
-    path: "/characters",
+    path: "/accounts",
     scope: "accounts.read",
     fetch: async (a) => {
       const list = await api<{ accounts: unknown[] }>("/modules/accounts/accounts", a);

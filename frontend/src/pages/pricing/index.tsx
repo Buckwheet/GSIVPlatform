@@ -14,7 +14,7 @@ interface SaleRow {
 export default function Pricing({ auth }: { auth: AuthState }) {
   const [rows, setRows] = useState<SaleRow[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const write = can(auth, ["pricing.write"]);
+  const canScrape = can(auth, ["pricing.scrape"]);
 
   async function refresh() {
     try {
@@ -32,7 +32,7 @@ export default function Pricing({ auth }: { auth: AuthState }) {
 
   async function runJob() {
     try {
-      await api("/modules/pricing/jobs", auth, { method: "POST", body: "{}" });
+      await api("/modules/pricing/scrape", auth, { method: "POST", body: "{}" });
       setTimeout(() => void refresh(), 2_000);
     } catch (err) {
       setError((err as Error).message);
@@ -43,7 +43,7 @@ export default function Pricing({ auth }: { auth: AuthState }) {
     <div>
       <h1>Pricing</h1>
       <p className="muted">Recent sales from the pricing module.</p>
-      {write && (
+      {canScrape && (
         <div className="toolbar">
           <button className="btn" onClick={() => void runJob()}>Run scraper job</button>
         </div>
