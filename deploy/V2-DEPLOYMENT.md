@@ -108,7 +108,10 @@ per-char override + lich-test — ALL must be repointed together).
 1. Backup: `sudo tar czf /opt/gs4sd/lich5-upgrade-backup-YYYY-MM-DD.tgz --exclude=logs --exclude=.git -C /opt/gs4sd lich5`
 2. `cd /opt/gs4sd/lich5 && git fetch --tags origin && git checkout v<new>` (or `git checkout main` to track upstream)
 3. `export PATH="$HOME/.rbenv/versions/4.0.6/bin:$PATH" && bundle install`
-4. Smoke test on the test server first (e.g. the Amn unit's flags with `--gs --test`) before touching live chars.
+4. There is no throwaway test char — **Amn is off-limits; test only on Fisternar/Neleourg**. After
+   `bundle install`, boot-check the new stack directly: `cd /opt/gs4sd/lich5 && DISPLAY= timeout 20
+   ruby lich.rbw --login Fisternar --without-frontend --scripts=/opt/gs4sd/lich5/scripts` and watch
+   the unit journal/`/opt/gs4sd/lich5/logs` for a clean boot before restarting the units.
 5. `sudo systemctl restart gs4sd-lich@Fisternar gs4sd-lich@Neleourg` (brief per-char disconnect).
 6. Verify: `systemctl is-active` both; `curl localhost:3102/api/modules/lich/watchdog` (heartbeats fresh);
    `curl localhost:3102/api/modules/gameview/streams` with the admin token (`up:true` for both) — the
