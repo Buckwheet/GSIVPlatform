@@ -4,12 +4,21 @@ import { can, type AuthState } from "../../core/auth";
 import { Button, Table, useToast } from "../../components";
 
 interface SaleRow {
-  item?: string;
-  seller?: string;
-  buyer?: string;
-  price?: number;
+  id?: number;
+  name?: string;
+  town?: string;
+  shop?: string;
+  cost?: number;
+  enchant?: number | null;
   removed_date?: string;
   [k: string]: unknown;
+}
+
+interface SalesResponse {
+  total: number;
+  page: number;
+  limit: number;
+  sales: SaleRow[];
 }
 
 export default function Pricing({ auth }: { auth: AuthState }) {
@@ -21,7 +30,8 @@ export default function Pricing({ auth }: { auth: AuthState }) {
 
   async function refresh() {
     try {
-      setRows(await api<SaleRow[]>("/modules/pricing/sales", auth));
+      const res = await api<SalesResponse>("/modules/pricing/sales", auth);
+      setRows(res.sales);
       setError(null);
     } catch (err) {
       setError((err as Error).message);
