@@ -5,6 +5,7 @@ import { Auth } from "./core/auth.js";
 import { ConfigFiles } from "./core/config-files.js";
 import { CoreDb } from "./core/db.js";
 import { EntryYaml } from "./core/entry-yaml.js";
+import { EventLog } from "./core/event-log.js";
 import { createKV } from "./core/kv.js";
 import { LichDb } from "./core/lich-db.js";
 import { Registry } from "./core/registry.js";
@@ -29,6 +30,7 @@ import { HealerStore } from "./modules/healer/store.js";
 import { healthModule } from "./modules/health/index.js";
 import { createInventoryModule } from "./modules/inventory/index.js";
 import { InventoryDbError, InventoryStore } from "./modules/inventory/store.js";
+import { createLogsModule } from "./modules/logs/index.js";
 import { createPricingModule } from "./modules/pricing/index.js";
 import { PricingScraper } from "./modules/pricing/scraper.js";
 import { PricingStore } from "./modules/pricing/store.js";
@@ -72,6 +74,8 @@ registry.register(createCharactersModule(charactersStore));
 
 // Accounts: TOTP-gated entry.yaml mgmt + SGE scan via review-gated capabilities.
 const db = new CoreDb(process.env.DB_PATH || "data/gsiv.db");
+const eventLog = new EventLog(db);
+registry.register(createLogsModule(eventLog));
 const accountsStore = new AccountsStore(db, new EntryYaml(), new Ruby(), new Sge());
 const totp = new Totp();
 registry.register(createAccountsModule(accountsStore, totp));
