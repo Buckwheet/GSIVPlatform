@@ -24,6 +24,7 @@ const LOADERS: Record<string, () => Promise<PageModule>> = {
   accounts: () => import("../pages/accounts"),
   config: () => import("../pages/config"),
   analysis: () => import("../pages/analysis"),
+  "your-shops": () => import("../pages/your-shops"),
 };
 
 /**
@@ -41,6 +42,7 @@ export const NAV_COMPONENTS: Record<string, LazyExoticComponent<ComponentType<Pa
   accounts: lazy(LOADERS.accounts),
   config: lazy(LOADERS.config),
   analysis: lazy(LOADERS.analysis),
+  "your-shops": lazy(LOADERS["your-shops"]),
 };
 
 export const NAV_GROUPS: NavGroup[] = raw.navGroups;
