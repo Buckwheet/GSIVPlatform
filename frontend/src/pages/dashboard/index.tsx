@@ -60,6 +60,20 @@ const TILES: TileDef[] = [
       return `${list.accounts.length} scanned`;
     },
   },
+  {
+    id: "your-shops",
+    title: "Your Shops",
+    icon: "🏪",
+    path: "/your-shops",
+    scope: "yourshops.read",
+    fetch: async (a) => {
+      const res = await api<{ total: number; sales: { removed_date: string; cost: number | null }[] }>("/modules/your-shops/sales", a);
+      const weekAgo = Date.now() - 7 * 86400_000;
+      const week = res.sales.filter((s) => new Date(s.removed_date).getTime() >= weekAgo);
+      const revenue = week.reduce((n, s) => n + (s.cost ?? 0), 0);
+      return `${week.length} sales · ${revenue.toLocaleString()} this week`;
+    },
+  },
 ];
 
 interface TileState {
