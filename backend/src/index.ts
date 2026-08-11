@@ -15,6 +15,7 @@ import { Sge } from "./core/sge.js";
 import { Systemd } from "./core/systemd.js";
 import { Totp } from "./core/totp.js";
 import { EventBus } from "./core/ws.js";
+import { createWsBridge } from "./core/ws-bridge.js";
 import { createAccountsModule } from "./modules/accounts/index.js";
 import { AccountsStore } from "./modules/accounts/store.js";
 import { createAnalysisModule } from "./modules/analysis/index.js";
@@ -97,4 +98,5 @@ const eventBus = new EventBus();
 
 const app = createApp({ registry, kv, db, auth, eventBus });
 const port = Number(process.env.PORT || 3100);
-serve({ fetch: app.fetch, port }, () => console.log(`gsiv-platform listening on :${port}`));
+const server = serve({ fetch: app.fetch, port }, () => console.log(`gsiv-platform listening on :${port}`));
+createWsBridge(server, auth, eventBus);
