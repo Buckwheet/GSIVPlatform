@@ -31,6 +31,8 @@ import { HealerStore } from "./modules/healer/store.js";
 import { healthModule } from "./modules/health/index.js";
 import { createInventoryModule } from "./modules/inventory/index.js";
 import { InventoryDbError, InventoryStore } from "./modules/inventory/store.js";
+import { createLichModule } from "./modules/lich/index.js";
+import { LichStore } from "./modules/lich/store.js";
 import { createLogsModule } from "./modules/logs/index.js";
 import { createPricingModule } from "./modules/pricing/index.js";
 import { PricingScraper } from "./modules/pricing/scraper.js";
@@ -72,6 +74,10 @@ registry.register(createHealerModule(healerStore));
 const charactersStore = new CharactersStore(kv, new EntryYaml(), new Systemd());
 await charactersStore.seedManagedIfEmpty();
 registry.register(createCharactersModule(charactersStore));
+
+// Lich channel (publisher state, command dispatch, watchdog, premium) - KV-backed, always available.
+const lichStore = new LichStore(kv);
+registry.register(createLichModule(lichStore));
 
 // Accounts: TOTP-gated entry.yaml mgmt + SGE scan via review-gated capabilities.
 const db = new CoreDb(process.env.DB_PATH || "data/gsiv.db");

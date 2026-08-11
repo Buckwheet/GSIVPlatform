@@ -2,15 +2,15 @@
 
 ## Current state (2026-08-11)
 
-v2 is deployed on the production OVH server **alongside** v1 (non-destructive):
+v2 is the **only** backend on the production OVH server since 2026-08-11 (v1 retired):
 
-| | v1 (GSIVDashboard) | v2 (GSIVPlatform) |
+| | v2 (GSIVPlatform) | v1 (GSIVDashboard) |
 |---|---|---|
-| Service | `gs4sd-backend.service` | `gsiv-platform.service` |
-| Port | 3100 | **3102** |
-| Path | `/opt/gs4sd/backend` | `/opt/gsiv-platform/backend` (frontend dist: `/opt/gsiv-platform/frontend`) |
-| Inventory DB | `invdb.ts` → `/opt/gs4sd/lich5/data/inv.db3` | same file, **read-only** via `INV_DB_PATH` |
-| Auth | env token map, no scopes | token + scopes (`*` admin) |
+| Service | `gsiv-platform.service` | `gs4sd-backend.service` — **stopped + disabled 2026-08-11** |
+| Port | **3102** | 3100 (free) |
+| Path | `/opt/gsiv-platform/backend` (frontend dist: `/opt/gsiv-platform/frontend`) | `/opt/gs4sd/backend` (files kept for rollback; Lich runtime stays at `/opt/gs4sd/lich5`) |
+| Inventory DB | `inv.db3` → `/opt/gs4sd/lich5/data/inv.db3` (read-only, `INV_DB_PATH`) | same file |
+| Auth | token + scopes (`*` admin; `machine` token for Lich scripts) | env token map, no scopes (dead) |
 
 ## Files on the server
 
@@ -33,7 +33,11 @@ LICH_DB_PATH=/opt/gs4sd/lich5/data/lich.db3
 ANALYSIS_DATA_DIR=/opt/gs4sd/data
 LICH_LOG_DIR=/opt/gs4sd/lich5/logs
 TOTP_SECRET_PATH=/opt/gsiv-platform/backend/data/totp_secret
-AUTH_TOKENS=admin:<uuid>:*
+# optional gameUp probe overrides for the lich watchdog:
+GAME_HOST=storm.gs4.game.play.net
+GAME_PORT=10024
+# admin token + scoped machine token used by every Lich script / watchdog / invdb scanner
+AUTH_TOKENS=admin:<uuid>:*,machine:<uuid>:gems.read,gems.write,healer.read,healer.write,characters.read,characters.write,pricing.read,pricing.write,lich.read,lich.write
 ```
 
 Token generated with `node -e "console.log(require('crypto').randomUUID())"` —
@@ -85,9 +89,40 @@ curl -s -H 'Host: gsiv.phylactery.ovh' -H "Authorization: Bearer $TOK" http://12
 ## Not yet done
 
 - **Cloudflare DNS**: A record `gsiv` → `51.68.235.144` (proxied) — the only thing between the site and the public internet
-- Pricing data import from the old sales-tracker DB (`/opt/sales-tracker/data/sales.db`)
-- Lich autoprice URL migration to `/api/modules/pricing/*` (+ jar seller, healer, characters watchdog, config, accounts)
-- Retire v1 (port 3100) once all modules are ported
+- Stream more chars (3-step recipe below) when they come online; confirm the zero-click Watch flow in a real browser
+- `gs4sd_streamer.lic` / `ebounty_tracker.lic` are retired with v1 (BuckTV replaced by VellumFE; bounty has no v2 home yet)
+
+## Lich migration + v1 retirement (2026-08-11)
+
+All Lich integration now runs against v2 `/api/modules/*`; v1 (port 3100) is retired.
+
+**New module — `lich`** (`/api/modules/lich/*`, scopes `lich.read`/`lich.write`, KV-backed):
+- `POST /publish` — publisher heartbeat (room_id + resources + spells, arbitrary JSON)
+- `GET /status/:char` — latest published state (404 when none)
+- `GET /watchdog` — `{gameUp, checkedAt, characters:[{name,online,lastSeen,ageSec}]}`; gameUp = TCP probe
+  to `storm.gs4.game.play.net:10024` (env `GAME_HOST`/`GAME_PORT`, 30s cache); online = heartbeat within 30s
+- `POST /commands` + `GET /commands/:char` — FIFO command queue (the invdb scanner's `;invdb` channel)
+- `POST /premium` — premium-info collector
+
+**Machine token** (`machine:<uuid>:<scopes>`) is used by: Lich units (`GS4SD_URL=http://localhost:3102`,
+`GS4SD_TOKEN` env), `gs4sd-watchdog.sh` (timer), `invdb-parallel.sh`/`invdb-scan.sh`. Rotate by editing
+`AUTH_TOKENS` in the server `.env` and restarting — same as the admin token.
+
+**Script URL moves (GSIVDashboard repo):** jar family → `/api/modules/gems/*` + `/api/modules/pricing/*`;
+healer/call_healer → `/api/modules/healer/*`; publisher/premium/gift_claim/courier room lookups →
+`/api/modules/lich/*`; `gs4sd_streamer.lic` removed from Lich start-scripts (BuckTV retired).
+
+**Watchdog gotcha (important):** v1's `/api/watchdog` only listed the 2 actively-managed chars; v2's
+managed list is every entry.yaml char. The watchdog script therefore gates restarts on
+`systemctl is-enabled` — only enabled units (currently Fisternar, Neleourg) are restarted. Without the
+gate a single timer run started ~70 disabled Lich units and blew the v2 rate limit (120 req/min per token).
+
+**Caddy:** `dashboard.phylactery.ovh` and `sales.phylactery.ovh` now 301 to `gsiv.phylactery.ovh`
+(fishbyte + bucktv still served under the dashboard host); `@sales` backend block removed
+(`gs4-sales-backend.service` stopped + disabled). Backups: `Caddyfile.bak-2026-08-11-retire`. Server
+`.env` backup: `.env.bak-2026-08-11`; unit backups: `gs4sd-lich@.service.bak-2026-08-11`,
+`<char>.conf.bak-2026-08-11`, script backups `*.lic.bak-2026-08-11` / `*.sh.bak-2026-08-11` under
+`/opt/gs4sd`.
 
 ## VellumFE streams (2026-08-11)
 

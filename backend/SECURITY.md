@@ -104,6 +104,27 @@ delta, and a security_review pass before merge.
 - Not ported: v1 `GET /api/logs` (event history — needs the logEvent core, a later item); the analysis shell scripts themselves should be reviewed server-side separately (they run as the service user).
 - **Known trade-offs (v1-faithful):** upload response includes the absolute destination path (v1 behavior); no symlink/realpath containment on the upload dir (same gap as config-files, documented); file reads are synchronous on the request path (small files, v1 behavior). Script kickoff is fire-and-forget with the child unref'd and NO timeout (analysis runs for minutes — v1 semantics).
 
+## Module: lich (publisher state, command dispatch, watchdog, premium)
+
+The v1 Lich integration channel ported to v2 (2026-08-11). KV-backed operational state:
+publisher heartbeats (`lich:state:<char>`), FIFO command queue (`lich:cmdq:<char>`),
+premium info (`lich:premium:<char>`), plus the watchdog endpoint.
+
+- **Auth + scopes:** every route requires a token; `lich.read` on GET (status/watchdog/commands poll),
+  `lich.write` on POST (publish/commands/premium). The `machine` token grants both (plus the module
+  scopes the scripts touch: gems/healer/characters/pricing) — never `*`.
+- **Input validation:** publish/premium accept a `character` string + arbitrary JSON (`catchall`); command
+  bodies zod-validated (`target`, `cmd` required). `cmd` is opaque — the *consumer* (Lich publisher)
+  decides whether it is a game command or `;script`. No execution happens server-side.
+- **Command queue:** a single KV JSON array per char (no Redis lists); FIFO pop on read is the poll
+  contract with the Lich publisher (single consumer per char) — acceptable for the single-instance deploy.
+- **Watchdog:** `GET /watchdog` TCP-probes `storm.gs4.game.play.net:10024` (env-overridable, 30s cache)
+  and reports per-char online from heartbeat recency. Read-only — the *script* decides restarts, gated on
+  `systemctl is-enabled` so disabled units are never started (v2's managed list = all entry.yaml chars,
+  unlike v1 which only listed actively-managed chars).
+- **Events:** publish/commands/premium emit `lich_state` / `lich_command` / `lich_premium` on the event bus
+  (no new WS topics wired yet — API-only module).
+
 ## Full-platform audit (2026-08-11)
 
 Whole-tree review (manual + subagent) after internet exposure. Findings + disposition:
