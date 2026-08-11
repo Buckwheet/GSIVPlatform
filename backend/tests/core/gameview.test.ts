@@ -36,11 +36,11 @@ describe("gameview module", () => {
     const body = await res.json();
     expect(body).toMatchObject({
       Fisternar: {
-        url: "https://vellum.phylactery.ovh/play#token=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b&rhost=127.0.0.1&rport=9101",
+        url: "https://fisternar.vellum.phylactery.ovh/play#token=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b&rhost=127.0.0.1&rport=9101",
         up: true,
       },
       Neleourg: {
-        url: "https://vellum.phylactery.ovh/play#token=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b&rhost=127.0.0.1&rport=9102",
+        url: "https://neleourg.vellum.phylactery.ovh/play#token=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b&rhost=127.0.0.1&rport=9102",
         up: true,
       },
     });
@@ -54,7 +54,7 @@ describe("gameview module", () => {
     });
     const res = await app.request("/api/modules/gameview/streams", { headers: { Authorization: "Bearer tok" } });
     const body = await res.json();
-    expect(body.Fisternar.url).toBe("https://vellum.phylactery.ovh/play#rhost=127.0.0.1&rport=9101");
+    expect(body.Fisternar.url).toBe("https://fisternar.vellum.phylactery.ovh/play#rhost=127.0.0.1&rport=9101");
   });
 
   it("reports a down stream when the web port is unreachable", async () => {

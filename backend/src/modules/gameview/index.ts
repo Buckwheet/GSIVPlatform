@@ -83,7 +83,13 @@ export function createGameviewModule(opts: {
         const out: Record<string, { url: string; up: boolean }> = {};
         for (const [char, { detach, web }] of Object.entries(streams)) {
           const frag = opts.token ? `token=${opts.token}&` : "";
-          const url = `${base}/play#${frag}rhost=127.0.0.1&rport=${detach}`;
+          // Per-character hostname: the browser sends the Host header (unlike the
+          // URL fragment), so Caddy routes each char to its own vellum instance.
+          // The fragment only prefills the web UI's Lich-attach form.
+          const host = new URL(base);
+          host.hostname = `${char.toLowerCase()}.${host.hostname}`;
+          const origin = host.toString().endsWith("/") ? host.toString().slice(0, -1) : host.toString();
+          const url = `${origin}/play#${frag}rhost=127.0.0.1&rport=${detach}`;
           out[char] = { url, up: await probe(web) };
         }
         return c.json(out);
