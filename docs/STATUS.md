@@ -107,6 +107,7 @@ merged `4a33643`). The app runs end-to-end on dev.
 
 **Open items / loose ends:**
 - `PROJECT_STATE.md` (repo root) is Gemini's design-pass work log — keep or fold into docs.
-- Frontend pages hardcode endpoints matching the real module routes — if a route changes, update the page (see the handoff brief's constraint list).
+- Frontend pages hardcode endpoints matching the real module routes — if a route changes, update the page (see the handoff brief's constraint list). **2026-08-10 late fix:** pricing page crashed because `/pricing/sales` returns paginated `{sales:[]}` not an array — fixed (`20c66bb`); all other pages audited against real response shapes (only pricing was broken).
+- Dev demo data (jars/queue/healer/request) lives in the backend InMemoryKV and was lost on the last restart — re-seed if you want the Jars/Healer boards populated on dev (POST a jar, join the queue, register a healer).
 - `GET /api/logs` (event history) not ported — needs the logEvent core (later item).
 - The `review` subagent works on the D:\ repo; `security_review` does not (see §6).
