@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -72,7 +72,7 @@ describe("AnalysisFiles capability", () => {
   it("tailGameLog falls back to 80 lines for non-finite line counts", async () => {
     writeFileSync(
       join(LOGS, "GSIV-Fisternar", "many.log"),
-      Array.from({ length: 100 }, (_, i) => "line" + i).join("\n"),
+      Array.from({ length: 100 }, (_, i) => `line${i}`).join("\n"),
     );
     const res = await af.tailGameLog("fisternar", Number.NaN);
     expect(res.ok).toBe(true);

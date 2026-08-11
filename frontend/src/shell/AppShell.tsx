@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { can, type AuthState } from "../core/auth";
 import { NAV_GROUPS, NAV_ITEMS } from "../core/manifest";
@@ -11,6 +12,16 @@ interface Props {
 /** Sidebar + topbar shell; nav is data-driven and scope-gated. */
 export function AppShell({ auth, onSignOut }: Props) {
   const location = useLocation();
+  const [density, setDensity] = useState<"comfortable" | "compact">(() => {
+    const stored = localStorage.getItem("gsiv-density");
+    const value = stored === "compact" ? "compact" : "comfortable";
+    document.documentElement.dataset.density = value; // apply before first paint
+    return value;
+  });
+
+  useEffect(() => {
+    localStorage.setItem("gsiv-density", density);
+  }, [density]);
   const visible = NAV_ITEMS.filter((item) => can(auth, item.requiresScopes));
 
   return (
@@ -51,6 +62,16 @@ export function AppShell({ auth, onSignOut }: Props) {
               label={auth.scopes.includes("*") ? "admin" : `${auth.scopes.length} scope${auth.scopes.length === 1 ? "" : "s"}`}
               title={auth.scopes.join(", ")}
             />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setDensity(density === "compact" ? "comfortable" : "compact")}
+              ariaLabel={density === "compact" ? "Switch to comfortable density" : "Switch to compact density"}
+              ariaPressed={density === "compact"}
+              title={`${density === "compact" ? "Compact" : "Comfortable"} density`}
+            >
+              {density === "compact" ? "▣ Compact" : "▢ Comfortable"}
+            </Button>
             <Button variant="ghost" size="sm" onClick={onSignOut}>
               Sign out
             </Button>

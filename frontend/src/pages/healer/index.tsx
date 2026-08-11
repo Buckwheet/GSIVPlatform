@@ -23,6 +23,7 @@ export default function Healer({ auth }: { auth: AuthState }) {
   const [healers, setHealers] = useState<HealerInfo[]>([]);
   const [requests, setRequests] = useState<HealRequest[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const { addToast } = useToast();
   const write = can(auth, ["healer.write"]);
 
@@ -35,6 +36,8 @@ export default function Healer({ auth }: { auth: AuthState }) {
       setError(null);
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -132,7 +135,12 @@ export default function Healer({ auth }: { auth: AuthState }) {
           title={`Pending requests (${pending.length})`}
           ariaLabel="Pending heal requests list"
         >
-          {pending.map((r) => (
+          {loading ? (
+            <>
+              <div className="board-item" aria-hidden="true"><span className="gs-skeleton gs-skeleton--bar" style={{ width: "40%", height: 14 }} /></div>
+              <div className="board-item" aria-hidden="true"><span className="gs-skeleton gs-skeleton--bar" style={{ width: "40%", height: 14 }} /></div>
+            </>
+          ) : pending.map((r) => (
             <div key={r.request_id} className="board-item">
               <span className="board-name">{r.character}</span>
               <span className="muted">room {String(r.room_id)}</span>
@@ -149,14 +157,18 @@ export default function Healer({ auth }: { auth: AuthState }) {
               )}
             </div>
           ))}
-          {!pending.length && <p className="muted" style={{ margin: 0 }}>Nothing pending.</p>}
+          {!pending.length && !loading && <p className="muted" style={{ margin: 0 }}>Nothing pending.</p>}
         </Card>
 
         <Card
           title={`Healers (${healers.length})`}
           ariaLabel="Registered healers list"
         >
-          {healers.map((h) => {
+          {loading ? (
+            <>
+              <div className="board-item" aria-hidden="true"><span className="gs-skeleton gs-skeleton--bar" style={{ width: "40%", height: 14 }} /></div>
+            </>
+          ) : healers.map((h) => {
             const isAlive = Date.now() - h.last_heartbeat < 30_000;
             return (
               <div key={h.character} className="board-item">
@@ -169,7 +181,7 @@ export default function Healer({ auth }: { auth: AuthState }) {
               </div>
             );
           })}
-          {!healers.length && <p className="muted" style={{ margin: 0 }}>No healers registered.</p>}
+          {!healers.length && !loading && <p className="muted" style={{ margin: 0 }}>No healers registered.</p>}
         </Card>
       </div>
     </div>

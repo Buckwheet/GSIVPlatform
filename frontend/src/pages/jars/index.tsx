@@ -21,6 +21,7 @@ export default function Jars({ auth }: { auth: AuthState }) {
   const [jars, setJars] = useState<JarStatus[]>([]);
   const [queue, setQueue] = useState<QueueRow[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const { addToast } = useToast();
   const write = can(auth, ["gems.write"]);
 
@@ -32,6 +33,8 @@ export default function Jars({ auth }: { auth: AuthState }) {
       setError(null);
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -144,7 +147,16 @@ export default function Jars({ auth }: { auth: AuthState }) {
       )}
 
       <div className="jar-grid">
-        {jars.map((j) => (
+        {loading ? (
+          <div aria-hidden="true">
+            {Array.from({ length: 2 }).map((_, i) => (
+              <Card key={i}>
+                <div className="gs-skeleton gs-skeleton--bar" style={{ width: "40%", height: 16, marginBottom: "var(--space-2)" }} />
+                <div className="gs-skeleton gs-skeleton--bar" style={{ width: "80%", height: 12 }} />
+              </Card>
+            ))}
+          </div>
+        ) : jars.map((j) => (
           <Card
             key={j.character}
             padding="default"
@@ -191,7 +203,7 @@ export default function Jars({ auth }: { auth: AuthState }) {
             </ul>
           </Card>
         ))}
-        {!jars.length && !error && (
+        {!jars.length && !error && !loading && (
           <Card ariaLabel="Empty jars state">
             <p className="muted" style={{ margin: 0 }}>No jar statuses published.</p>
           </Card>

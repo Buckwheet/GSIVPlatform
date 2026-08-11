@@ -118,7 +118,7 @@ describe("healer module routes", () => {
   it("/requests returns only the last 20", async () => {
     const app = makeApp("limited:tok:healer.read,healer.write");
     for (let i = 0; i < 25; i++) {
-      await post(app, "/api/modules/healer/request", { character: "Char" + i, room_id: 1 });
+      await post(app, "/api/modules/healer/request", { character: `Char${i}`, room_id: 1 });
     }
     const res = await app.request("/api/modules/healer/requests", { headers: auth });
     const list = (await res.json()) as { character: string }[];

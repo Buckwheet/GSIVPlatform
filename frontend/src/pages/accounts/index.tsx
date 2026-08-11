@@ -13,6 +13,7 @@ interface AccountRow {
 export default function Accounts({ auth }: { auth: AuthState }) {
   const [accounts, setAccounts] = useState<AccountRow[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [totpSetup, setTotpSetup] = useState(false);
   const [secret, setSecret] = useState<string | null>(null);
   const [qr, setQr] = useState<string | null>(null);
@@ -35,6 +36,8 @@ export default function Accounts({ auth }: { auth: AuthState }) {
       setError(null);
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -199,6 +202,7 @@ export default function Accounts({ auth }: { auth: AuthState }) {
         rowKey={(a) => a.account_name}
         ariaLabel="Platform user accounts list"
         emptyState="No accounts scanned yet — trigger a scan."
+        loading={loading}
       />
 
       {write && totpSetup && (

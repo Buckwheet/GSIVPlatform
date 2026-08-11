@@ -19,6 +19,7 @@ export interface TableProps<T> {
   maxHeight?: string;
   onRowClick?: (row: T) => void;
   emptyState?: React.ReactNode;
+  loading?: boolean; // show skeleton rows while data loads
   // Optional sorting props if pages use them
   sortKey?: string;
   sortDirection?: "asc" | "desc";
@@ -35,6 +36,7 @@ export function Table<T>({
   maxHeight,
   onRowClick,
   emptyState = "No data available",
+  loading = false,
   sortKey,
   sortDirection,
   onSort,
@@ -94,7 +96,7 @@ export function Table<T>({
   };
 
   const tableElement = (
-    <table className={`gs-table${density ? ` gs-table--${density}` : ""}`} aria-label={ariaLabel}>
+    <table className={`gs-table${density ? ` gs-table--${density}` : ""}`} aria-label={ariaLabel} aria-busy={loading}>
       <thead>
         <tr>
           {columns.map((col) => {
@@ -130,7 +132,20 @@ export function Table<T>({
         </tr>
       </thead>
       <tbody>
-        {processedRows.length === 0 ? (
+        {loading ? (
+          Array.from({ length: 5 }).map((_, r) => (
+            <tr key={r} className="gs-table__row" aria-hidden="true">
+              {columns.map((col) => (
+                <td key={col.key} className="gs-table__td">
+                  <span
+                    className="gs-skeleton gs-skeleton--bar"
+                    style={{ width: r === 0 && col.key === columns[0].key ? "40%" : "90%", height: 14, display: "inline-block" }}
+                  />
+                </td>
+              ))}
+            </tr>
+          ))
+        ) : processedRows.length === 0 ? (
           <tr>
             <td colSpan={columns.length} className="gs-table__empty-cell">
               <div className="gs-table__empty-state">{emptyState}</div>

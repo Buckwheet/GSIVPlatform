@@ -105,8 +105,8 @@ export function createAnalysisModule(analysisFiles: AnalysisFiles, runner: Scrip
       });
       router.openapi(uploadRoute, async (c) => {
         const body = await c.req.parseBody();
-        const file = body["file"];
-        const character = (body["character"] as string) || "GSIV-Mejora";
+        const file = body.file;
+        const character = (body.character as string) || "GSIV-Mejora";
         if (!file || typeof file === "string" || !(file instanceof File)) {
           return c.json({ error: "no file" }, 400);
         }

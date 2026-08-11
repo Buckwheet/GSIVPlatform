@@ -24,6 +24,7 @@ interface SalesResponse {
 export default function Pricing({ auth }: { auth: AuthState }) {
   const [rows, setRows] = useState<SaleRow[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [scraping, setScraping] = useState(false);
   const { addToast } = useToast();
   const canScrape = can(auth, ["pricing.scrape"]);
@@ -35,6 +36,8 @@ export default function Pricing({ auth }: { auth: AuthState }) {
       setError(null);
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -110,6 +113,7 @@ export default function Pricing({ auth }: { auth: AuthState }) {
         rowKey={(r, idx) => r.item ? `${r.item}-${idx}` : String(idx)}
         ariaLabel="Recent game item sales and prices"
         emptyState="No sales tracked yet."
+        loading={loading}
       />
     </div>
   );

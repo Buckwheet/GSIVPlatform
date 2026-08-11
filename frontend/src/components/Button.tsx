@@ -12,6 +12,7 @@ export interface ButtonProps {
   loading?: boolean;
   onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
   ariaLabel?: string;
+  ariaPressed?: boolean;
   title?: string;
   dataTestid?: string;
   style?: React.CSSProperties;
@@ -26,6 +27,7 @@ export function Button({
   loading = false,
   onClick,
   ariaLabel,
+  ariaPressed,
   title,
   dataTestid,
   style,
@@ -37,6 +39,7 @@ export function Button({
       disabled={disabled || loading}
       onClick={onClick}
       aria-label={ariaLabel}
+      aria-pressed={ariaPressed}
       aria-busy={loading ? "true" : undefined}
       title={title}
       data-testid={dataTestid}
