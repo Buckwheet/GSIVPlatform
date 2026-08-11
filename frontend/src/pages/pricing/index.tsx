@@ -65,15 +65,15 @@ export default function Pricing({ auth }: { auth: AuthState }) {
   }
 
   const columns = [
-    { key: "item", header: "Item", sortable: true },
-    { key: "seller", header: "Seller", sortable: true },
-    { key: "buyer", header: "Buyer", sortable: true },
+    { key: "name", header: "Item", sortable: true },
+    { key: "shop", header: "Shop", sortable: true },
+    { key: "town", header: "Town", sortable: true },
     {
-      key: "price",
+      key: "cost",
       header: "Price",
       sortable: true,
       align: "right" as const,
-      render: (r: SaleRow) => (typeof r.price === "number" ? r.price.toLocaleString() : String(r.price ?? "")),
+      render: (r: SaleRow) => (typeof r.cost === "number" ? r.cost.toLocaleString() : String(r.cost ?? "")),
     },
     {
       key: "removed_date",
@@ -110,7 +110,7 @@ export default function Pricing({ auth }: { auth: AuthState }) {
       <Table
         columns={columns}
         rows={rows}
-        rowKey={(r, idx) => r.item ? `${r.item}-${idx}` : String(idx)}
+        rowKey={(r, idx) => r.name ? `${r.name}-${idx}` : String(idx)}
         ariaLabel="Recent game item sales and prices"
         emptyState="No sales tracked yet."
         loading={loading}
