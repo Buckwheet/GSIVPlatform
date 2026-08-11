@@ -80,6 +80,7 @@ registry.register(createLogsModule(eventLog));
 registry.register(
   createGameviewModule({
     baseUrl: process.env.VELLUM_BASE_URL,
+    streamDomain: process.env.VELLUM_STREAM_DOMAIN,
     streams: process.env.VELLUM_STREAMS,
     token: process.env.VELLUM_TOKEN,
   }),
