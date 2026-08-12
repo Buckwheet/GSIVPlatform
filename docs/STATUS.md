@@ -152,6 +152,22 @@ Separate workstream: **scheduler UX redesign** (move off the Inventory page; bat
 - **Auto-save:** on sign-off, mark done in this file + memory; fresh session resumes at step 2 (resources).
 - **Status:** implemented + committed (`093c97b`). Steps 2–4 live; **step 5 (launch-a-character)** done + live (PR #43); **step 5b (one-click bring-online + stream for offline chars)** done + live (PR #44, deployed + verified on Fisternar/Neleourg — `launch ▸` is start-then-open for stream-configured chars when the token has `lich.write`/`characters.write`; without the write scope it falls back to the step-5 tooltips; chars without a VELLUM_STREAMS entry still can't launch). **Step 6 (unified display) DONE + live (PR #46)** — the item-search feature steps 1–6 are complete. Next open items: **scheduler UX redesign** (parked) + **stale-char cleanup** (parked; the Overview notices now surface candidates, e.g. Adred_/Buckt2_/Buckwheet_ with trailing underscores + 13 chars with zero items).
 
+**Roster-sync feature (weekly SGE gather/verify/correct) — implemented + LIVE (2026-08-12):** spec
+`docs/superpowers/specs/2026-08-12-roster-sync-design.md` (commit 08b80bd) + plan
+`docs/superpowers/plans/2026-08-12-roster-sync.md` (503deea). Commits: f395f56 (per-row upsert +
+status/auto_added columns — no more delete-and-reinsert; last_seen preserved for entry_only rows), 4e4f68a
+(auto-add SGE-discovered chars to entry.yaml during scanOne), 02cf714 (GET /accounts/stale — entry_only chars +
+bad_password/error/decrypt_error accounts, accounts.read), b92d54e (Accounts page stale banner). 319 backend
+tests green. **Server:** entry.yaml merged to 36 accounts (35 local C:lich5 + KAISER999 server-only; local wins;
+backup entry.yaml.bak-roster-migrate-20260812-215148; all decrypt standard-mode verified). LWELLS5500 scan
+verified live: auth ok; **Scorpa flagged stale (entry_only, never seen active — the user's suspicion confirmed)**;
+Dillydilly/Ryallian/Stallo auto-added to entry.yaml (auto_added=1); Skaad known. Weekly timer installed:
+`gsiv-roster-scan.timer` (Mon 03:30 UTC, Persistent=true) → `gsiv-roster-scan.service` → wrapper
+/opt/gsiv-platform/scripts/gsiv-roster-scan.sh with /etc/gsiv-roster-scan.env (0600). **PENDING:** add
+`accounts.read,accounts.write` to the machine token in server .env AUTH_TOKENS + restart + force-run the timer
+once to verify the machine-token path (deferred until the full 36-account backfill finishes — restart kills the
+in-progress scan).
+
 **Dev:** gate = `cd backend && npm test && npm run typecheck && npm run lint` + `cd frontend && npm run build`. Run backend (`cd backend && AUTH_TOKENS=... npx tsx src/index.ts`) + frontend (`npm run dev`), paste token in the UI. Kill stale dev servers (:3102/:5173) before redeploying. **Edits to this repo go through bash** (D: path — file tools are confined to the C: workspace). Redeploy recipe + lich module docs: `deploy/V2-DEPLOYMENT.md` (§Lich migration).
 
 **Restart prompt (copy-paste into a new session when resuming):**
@@ -161,12 +177,14 @@ Separate workstream: **scheduler UX redesign** (move off the Inventory page; bat
 > Item-search feature on /lookup: steps 1–5 DONE + live (Bank, Resources, Tickets+Lumnis, Items tabs — the Items
 > tab uses the invdb filter grammar: bare words, `type=`/`location=`/`amount>N`/`level>N`/`!=`/`/regex/`/
 > `*` wildcards, `a|b` arrays, `limit=`/`orderby=`; `launch ▸` brings a char online — start-then-open for
-> offline chars when the token has a write scope). NEXT = **step 6 unified display** (intelligent dashboard
-> view of everything invdb collects). Testing rule:
+> offline chars when the token has a write scope). Steps 1–6 + Overview DONE + live. NEXT = **weekly roster
+> sync** (SGE gather/verify/correct on the accounts module; 36 accounts migrated to entry.yaml; lwells5500
+> verified live — Scorpa flagged stale, new chars auto-added; gsiv-roster-scan.timer Mon 03:30 UTC; then the
+> stale-char cleanup workstream consumes GET /accounts/stale). Testing rule:
 > Fisternar/Neleourg only, Amn off-limits. Server: `ssh -i ~/.ssh/id_ed25519 ubuntu@51.68.235.144` (origin IP;
 > the DNS name is Cloudflare-fronted and unreachable) — runbook at top of /opt/gsiv-platform/backend/.env;
 > frontend deploys MUST copy contents into /opt/gsiv-platform/frontend (Caddy root), never dist/; verify the
 > public bundle is text/javascript (CF cache poisoning gotcha). Workflow: branch → `gh pr merge`. Parked:
-> **Mahres + stale chars cleanup from invdb** (user: do later), **scheduler UX redesign** (batch-by-account
+> **stale-char cleanup from invdb** (next workstream — consumes GET /accounts/stale: Scorpa + Overview notice candidates Adred_/Buckt2_/Buckwheet_, 13 chars with zero items), **scheduler UX redesign** (batch-by-account
 > orchestrator, move off the Inventory page). Recall memories: next-feature-interactive-... ,
 > gsiv-server-ssh-origin-ip-... , invdb-lic-patches-... .
