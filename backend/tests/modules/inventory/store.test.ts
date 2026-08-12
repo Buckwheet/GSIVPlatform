@@ -87,7 +87,7 @@ describe("InventoryStore", () => {
     const store = makeStore();
     const res = store.resources();
     expect(res.length).toBe(2);
-    expect(res[0]).toMatchObject({ character: "Fisternar", favor: 100 });
+    expect(res[0]).toMatchObject({ character: "Fisternar", account: "main", favor: 100 });
   });
 
   it("lists tickets", () => {

@@ -94,6 +94,15 @@ describe("inventory module routes", () => {
     expect(fis).toMatchObject({ silvers: 125000, account: "main", prof: "warrior", level: 100 });
   });
 
+  it("returns resources with account", async () => {
+    const app = makeApp("limited:tok:inventory.read");
+    const res = await app.request("/api/modules/inventory/resources", { headers: { Authorization: "Bearer tok" } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { character: string; account: string; favor: number }[];
+    expect(body.length).toBe(2);
+    expect(body[0]).toMatchObject({ character: "Fisternar", account: "main" });
+  });
+
   it("exposes inventory routes in the OpenAPI spec", async () => {
     const app = makeApp("admin:tok:*");
     const res = await app.request("/api/spec", { headers: { Authorization: "Bearer tok" } });
