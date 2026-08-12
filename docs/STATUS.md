@@ -135,4 +135,10 @@ Separate workstream: **scheduler UX redesign** (move off the Inventory page; bat
 
 **Patch-vs-build context (2026-08-12):** the *collection* must run inside a logged-in Lich session (game only reveals inventory to the client) — that's why invdb.lic gets patched for the headless server env (Ruby 4.0.6 gem shadowing, inv.db3 NOT NULL schema, scan timing). The *query/display* layer is dashboard-native (inv.db3 is already read by the v2 inventory module) — that part is built, not patched.
 
+**Step 1 design (bank balances) — awaiting user sign-off:**
+- **Home:** the interactive search feature gets its own page/module (`/lookup`, "Lookup", market or operations group) — NOT the Inventory page (scheduler feedback: keep items page clean). Tabs/sections for each step: Bank → Resources → Tickets → Items. Step 1 = the Bank section.
+- **Data:** from `/opt/gs4sd/lich5/data/inv.db3` — `silver` (character_id, bank_id, amount) joined with `character` + static `bank` (10 towns + Total), via the v2 inventory module (`/api/modules/inventory/bank` — extend it if needed: it already returns character/bank/silvers).
+- **UI:** sortable table of per-character × town-bank silvers; per-char total column; grand total; filters (character name, account via characters join); currency formatting; "launch ▸" affordance per char (wired in step 5).
+- **Auto-save:** on sign-off, mark done in this file + memory; fresh session resumes at step 2 (resources).
+
 **Dev:** gate = `cd backend && npm test && npm run typecheck && npm run lint` + `cd frontend && npm run build`. Run backend (`cd backend && AUTH_TOKENS=... npx tsx src/index.ts`) + frontend (`npm run dev`), paste token in the UI. Kill stale dev servers (:3102/:5173) before redeploying. **Edits to this repo go through bash** (D: path — file tools are confined to the C: workspace). Redeploy recipe + lich module docs: `deploy/V2-DEPLOYMENT.md` (§Lich migration).
