@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Button, Input, Select, Table, Tabs, useToast, type Column } from "../../components";
 import { api } from "../../core/api";
-import type { AuthState } from "../../core/auth";
+import { can, type AuthState } from "../../core/auth";
 
 interface BankRow {
   character: string;
@@ -136,6 +136,7 @@ export default function Lookup({ auth }: { auth: AuthState }) {
   const [account, setAccount] = useState("all");
   const [hiddenTowns, setHiddenTowns] = useState<string[]>([]);
   const [streams, setStreams] = useState<StreamMap>({});
+  const [launching, setLaunching] = useState<string | null>(null);
   const { addToast } = useToast();
 
   useEffect(() => {
@@ -233,10 +234,65 @@ export default function Lookup({ auth }: { auth: AuthState }) {
     }
   }
 
-  /** launch ▸ — open the char’s live stream when one is online; explain otherwise. */
+  /**
+   * launch ▸ — one click brings the char online and opens its stream (step 5b):
+   * POST /launch/:char starts the char's Lich unit when it is inactive, then
+   * the stream tab opens (zero-click auto-connect). Only stream-configured
+   * chars can launch; without a write scope it falls back to the step-5
+   * behavior (open the live stream when up, explain otherwise).
+   */
+  async function launchChar(character: string, url: string, streamUp: boolean) {
+    setLaunching(character);
+    // Open the tab inside the click gesture (popup blockers eat window.open
+    // after an await); navigate it once the backend confirms the start.
+    const win = window.open("about:blank", "_blank");
+    try {
+      const res = await api<{ char: string; url: string; started: boolean }>(
+        `/modules/gameview/launch/${encodeURIComponent(character)}`,
+        auth,
+        { method: "POST" },
+      );
+      if (win) win.location.href = res.url;
+      addToast({
+        tone: "good",
+        title: `${character} launched`,
+        message: `${res.started ? "Lich session started" : "Lich session already active"} — ${streamUp ? "stream opened." : "stream web UI is currently offline."}`,
+      });
+    } catch (err) {
+      if (win) win.close();
+      addToast({ tone: "bad", title: `Launch ${character} failed`, message: (err as Error).message });
+    } finally {
+      setLaunching(null);
+    }
+  }
+
   function renderLaunch(character: string) {
     const s = streams[character];
-    if (s?.up) {
+    const canWrite = can(auth, ["lich.write"]) || can(auth, ["characters.write"]);
+    if (!s) {
+      return (
+        <Button
+          disabled
+          title={`No stream for ${character} — add one per deploy/V2-DEPLOYMENT.md §VellumFE`}
+          ariaLabel={`Launch ${character}`}
+        >
+          launch ▸
+        </Button>
+      );
+    }
+    if (canWrite) {
+      return (
+        <Button
+          loading={launching === character}
+          onClick={() => void launchChar(character, s.url, s.up)}
+          title={`Bring ${character} online and open the stream`}
+          ariaLabel={`Bring ${character} online and open stream`}
+        >
+          launch ▸
+        </Button>
+      );
+    }
+    if (s.up) {
       return (
         <a
           className="gs-btn gs-btn--ghost gs-btn--sm"
@@ -249,11 +305,8 @@ export default function Lookup({ auth }: { auth: AuthState }) {
         </a>
       );
     }
-    const title = s
-      ? `${character} stream is offline`
-      : `No stream for ${character} — add one per deploy/V2-DEPLOYMENT.md §VellumFE`;
     return (
-      <Button disabled title={title} ariaLabel={`Launch ${character}`}>
+      <Button disabled title={`${character} stream is offline`} ariaLabel={`Launch ${character}`}>
         launch ▸
       </Button>
     );
@@ -385,7 +438,7 @@ export default function Lookup({ auth }: { auth: AuthState }) {
       },
     ];
     return cols;
-  }, [towns, hiddenTowns, streams]);
+  }, [towns, hiddenTowns, streams, launching, auth]);
 
   const charCol = (r: { account: string; character: string; level: number; prof: string }) => (
     <div>
@@ -482,7 +535,7 @@ export default function Lookup({ auth }: { auth: AuthState }) {
         render: (r) => renderLaunch(r.character),
       },
     ],
-    [streams],
+    [streams, launching, auth],
   );
 
   return (
@@ -506,7 +559,7 @@ export default function Lookup({ auth }: { auth: AuthState }) {
         ariaLabel="Lookup sections"
       />
       <p className="muted" style={{ margin: "var(--space-2) 0 var(--space-4) 0" }}>
-        launch ▸ opens the character’s live stream in a new tab when one is online (currently Fisternar, Neleourg).
+        launch ▸ brings the character online (starts its Lich session when needed) and opens its stream in a new tab (currently Fisternar, Neleourg).
       </p>
 
       <div className="toolbar" style={{ maxWidth: "640px", marginBottom: "var(--space-4)" }}>
