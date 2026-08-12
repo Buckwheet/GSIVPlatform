@@ -81,6 +81,44 @@ const lumnisRowSchema = z.object({
   last_schedule: z.string(),
 });
 
+const overviewSchema = z.object({
+  stats: z.object({
+    characters: z.number(),
+    accounts: z.number(),
+    items: z.number(),
+    totalSilver: z.number(),
+    dataAsOf: z.string().nullable(),
+    tableFreshness: z.array(
+      z.object({ table: z.string(), asOf: z.string().nullable(), daysOld: z.number().nullable() }),
+    ),
+  }),
+  perCharacter: z.array(
+    z.object({
+      character: z.string(),
+      account: z.string(),
+      prof: z.string(),
+      level: z.number(),
+      race: z.string(),
+      totalSilver: z.number(),
+      itemCount: z.number(),
+      resourceTotal: z.number().nullable(),
+      energy: z.string().nullable(),
+      lumnisTotal: z.number().nullable(),
+      lumnisStatus: z.string().nullable(),
+      ticketCount: z.number(),
+      lastScan: z.number().nullable(),
+    }),
+  ),
+  distributions: z.object({
+    itemTypes: z.array(z.object({ label: z.string(), count: z.number() })),
+    itemLocations: z.array(z.object({ label: z.string(), count: z.number() })),
+    townBanks: z.array(z.object({ label: z.string(), amount: z.number() })),
+    richest: z.array(z.object({ character: z.string(), totalSilver: z.number() })),
+    topHoards: z.array(z.object({ character: z.string(), itemCount: z.number() })),
+  }),
+  notices: z.array(z.object({ level: z.enum(["info", "warn"]), message: z.string() })),
+});
+
 const routes = {
   summary: createRoute({
     method: "get",
@@ -169,6 +207,16 @@ const routes = {
     path: "/lumnis",
     responses: {
       200: { content: { "application/json": { schema: z.array(lumnisRowSchema) } }, description: "Lumnis status" },
+    },
+  }),
+  overview: createRoute({
+    method: "get",
+    path: "/overview",
+    responses: {
+      200: {
+        content: { "application/json": { schema: overviewSchema } },
+        description: "Unified overview of everything invdb collects",
+      },
     },
   }),
   time: createRoute({
@@ -351,6 +399,7 @@ export function createInventoryModule(store: InventoryStore, options: InventoryM
       "GET /resources": ["inventory.read"],
       "GET /tickets": ["inventory.read"],
       "GET /lumnis": ["inventory.read"],
+      "GET /overview": ["inventory.read"],
       "GET /time": ["inventory.read"],
       "GET /schedule": ["inventory.read"],
       "PUT /schedule": ["inventory.write"],
@@ -394,6 +443,7 @@ export function createInventoryModule(store: InventoryStore, options: InventoryM
         c.json(store.tickets() as unknown as Array<z.infer<typeof ticketRowSchema>>),
       );
       router.openapi(routes.lumnis, (c) => c.json(store.lumnis() as unknown as Array<z.infer<typeof lumnisRowSchema>>));
+      router.openapi(routes.overview, (c) => c.json(store.overview() as unknown as z.infer<typeof overviewSchema>));
       router.openapi(routes.time, (c) => c.json({ now: new Date().toISOString(), tz: "UTC" }));
       router.openapi(routes.schedule, (c) => c.json(scheduleState(exec)));
       router.openapi(routes.setSchedule, (c) => {

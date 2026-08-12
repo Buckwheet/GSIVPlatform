@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Button, Input, Select, Table, Tabs, useToast, type Column } from "../../components";
+import { Button, Card, Input, Select, Skeleton, Table, Tabs, useToast, type Column } from "../../components";
 import { api } from "../../core/api";
 import { can, type AuthState } from "../../core/auth";
 
@@ -82,6 +82,42 @@ interface ItemRow {
   timestamp: number;
 }
 
+interface OverviewChar {
+  character: string;
+  account: string;
+  prof: string;
+  level: number;
+  race: string;
+  totalSilver: number;
+  itemCount: number;
+  resourceTotal: number | null;
+  energy: string | null;
+  lumnisTotal: number | null;
+  lumnisStatus: string | null;
+  ticketCount: number;
+  lastScan: number | null;
+}
+
+interface OverviewPayload {
+  stats: {
+    characters: number;
+    accounts: number;
+    items: number;
+    totalSilver: number;
+    dataAsOf: string | null;
+    tableFreshness: { table: string; asOf: string | null; daysOld: number | null }[];
+  };
+  perCharacter: OverviewChar[];
+  distributions: {
+    itemTypes: { label: string; count: number }[];
+    itemLocations: { label: string; count: number }[];
+    townBanks: { label: string; amount: number }[];
+    richest: { character: string; totalSilver: number }[];
+    topHoards: { character: string; itemCount: number }[];
+  };
+  notices: { level: "info" | "warn"; message: string }[];
+}
+
 /** Per-char VellumFE stream links from the gameview module (scope gameview.read). */
 interface StreamMap {
   [char: string]: { url: string; up: boolean };
@@ -116,7 +152,7 @@ const ITEM_EXAMPLES = [
 const fmt = (n: number) => n.toLocaleString("en-US");
 
 export default function Lookup({ auth }: { auth: AuthState }) {
-  const [activeTab, setActiveTab] = useState<"bank" | "resources" | "tickets" | "items">("bank");
+  const [activeTab, setActiveTab] = useState<"overview" | "bank" | "resources" | "tickets" | "items">("overview");
   const [rows, setRows] = useState<BankRow[]>([]);
   const [resRows, setResRows] = useState<ResourceRow[]>([]);
   const [resLoaded, setResLoaded] = useState(false);
@@ -128,6 +164,10 @@ export default function Lookup({ auth }: { auth: AuthState }) {
   const [itemLoaded, setItemLoaded] = useState(false);
   const [itemLoading, setItemLoading] = useState(false);
   const [itemError, setItemError] = useState<string | null>(null);
+  const [overview, setOverview] = useState<OverviewPayload | null>(null);
+  const [overviewLoaded, setOverviewLoaded] = useState(false);
+  const [overviewLoading, setOverviewLoading] = useState(false);
+  const [overviewError, setOverviewError] = useState<string | null>(null);
   const [expr, setExpr] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -206,6 +246,26 @@ export default function Lookup({ auth }: { auth: AuthState }) {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, resLoaded, auth]);
+
+  // Overview: lazy-load once on first activation (it is the default tab, so on mount).
+  useEffect(() => {
+    if (activeTab !== "overview" || overviewLoaded) return;
+    (async () => {
+      setOverviewLoading(true);
+      try {
+        setOverview(await api<OverviewPayload>("/modules/inventory/overview", auth));
+        setError(null);
+      } catch (err) {
+        const msg = (err as Error).message;
+        setOverviewError(msg);
+        addToast({ tone: "bad", title: "Overview Data Failed", message: msg });
+      } finally {
+        setOverviewLoaded(true);
+        setOverviewLoading(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, overviewLoaded, auth]);
 
   // Items: lazy-load once on tab activation (empty expression = browse everything),
   // then re-run on every explicit search.
@@ -347,8 +407,9 @@ export default function Lookup({ auth }: { auth: AuthState }) {
     for (const r of tktRows) s.add(r.account);
     for (const r of lumRows) s.add(r.account);
     for (const r of itemRows) s.add(r.account);
+    for (const r of overview?.perCharacter ?? []) s.add(r.account);
     return [...s].sort();
-  }, [displayRows, resRows, itemRows]);
+  }, [displayRows, resRows, itemRows, overview]);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -394,6 +455,15 @@ export default function Lookup({ auth }: { auth: AuthState }) {
         (account === "all" || r.account === account),
     );
   }, [itemRows, q, account]);
+
+  const filteredOverview = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return (overview?.perCharacter ?? []).filter(
+      (r) =>
+        (needle === "" || r.character.toLowerCase().includes(needle)) &&
+        (account === "all" || r.account === account),
+    );
+  }, [overview, q, account]);
 
   const grandTotal = filtered.reduce((s, r) => s + r.total, 0);
 
@@ -538,6 +608,59 @@ export default function Lookup({ auth }: { auth: AuthState }) {
     [streams, launching, auth],
   );
 
+  const relAgo = (sec: number) => {
+    if (sec < 3600) return `${Math.max(1, Math.floor(sec / 60))}m ago`;
+    if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
+    return `${Math.floor(sec / 86400)}d ago`;
+  };
+
+  const statValues = overview
+    ? [
+        { label: "Characters", value: fmt(overview.stats.characters) },
+        { label: "Items tracked", value: fmt(overview.stats.items) },
+        { label: "Silvers in town banks", value: fmt(overview.stats.totalSilver) },
+        { label: "Accounts", value: fmt(overview.stats.accounts) },
+        {
+          label: "Data as of",
+          value: overview.stats.dataAsOf
+            ? relAgo(Math.floor((Date.now() - Date.parse(overview.stats.dataAsOf)) / 1000))
+            : "no scans yet",
+        },
+      ]
+    : [];
+
+  const overviewColumns = useMemo<Column<OverviewChar>[]>(
+    () => [
+      { key: "character", header: "Character", sortable: true, render: charCol },
+      { key: "level", header: "Level", sortable: true, align: "right" },
+      { key: "itemCount", header: "Items", sortable: true, align: "right", render: (r) => fmt(r.itemCount) },
+      { key: "totalSilver", header: "Silvers", sortable: true, align: "right", render: (r) => fmt(r.totalSilver) },
+      {
+        key: "resourceTotal",
+        header: "Resources",
+        sortable: true,
+        align: "right",
+        render: (r) => (r.resourceTotal === null ? "–" : fmt(r.resourceTotal)),
+      },
+      {
+        key: "lumnisTotal",
+        header: "Lumnis",
+        sortable: true,
+        align: "right",
+        render: (r) => (r.lumnisTotal === null ? "–" : fmt(r.lumnisTotal)),
+      },
+      { key: "ticketCount", header: "Tickets", sortable: true, align: "right", render: (r) => fmt(r.ticketCount) },
+      {
+        key: "lastScan",
+        header: "Last scan",
+        sortable: true,
+        render: (r) => (r.lastScan === null ? "–" : relAgo(Math.floor(Date.now() / 1000) - r.lastScan)),
+      },
+      { key: "launch", header: "", align: "right", render: (r) => renderLaunch(r.character) },
+    ],
+    [streams, launching, auth],
+  );
+
   return (
     <div>
       <header className="page-header" style={{ flexDirection: "column" }}>
@@ -549,13 +672,14 @@ export default function Lookup({ auth }: { auth: AuthState }) {
 
       <Tabs
         tabs={[
+          { id: "overview", label: "Overview" },
           { id: "bank", label: "Bank" },
           { id: "resources", label: "Resources" },
           { id: "tickets", label: "Tickets" },
           { id: "items", label: "Items" },
         ]}
         activeId={activeTab}
-        onChange={(id) => setActiveTab(id as "bank" | "resources" | "tickets" | "items")}
+        onChange={(id) => setActiveTab(id as "overview" | "bank" | "resources" | "tickets" | "items")}
         ariaLabel="Lookup sections"
       />
       <p className="muted" style={{ margin: "var(--space-2) 0 var(--space-4) 0" }}>
@@ -668,7 +792,128 @@ export default function Lookup({ auth }: { auth: AuthState }) {
         </div>
       )}
 
-      {activeTab === "bank" ? (
+      {activeTab === "overview" ? (
+        <>
+          {overviewError && (
+            <div
+              style={{
+                marginBottom: "var(--space-4)",
+                padding: "var(--space-3)",
+                background: "var(--tint-bad)",
+                border: "1px solid var(--bad)",
+                borderRadius: "var(--radius-sm)",
+                color: "var(--text-strong)",
+              }}
+            >
+              <strong>Overview error:</strong> {overviewError}
+            </div>
+          )}
+          {overviewLoading && !overview && <Skeleton variant="text" lines={4} />}
+          {overview && (
+            <>
+              {overview.notices.length > 0 && (
+                <div style={{ marginBottom: "var(--space-4)" }}>
+                  {overview.notices.map((n, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        display: "flex",
+                        gap: "var(--control-gap)",
+                        alignItems: "flex-start",
+                        padding: "var(--space-2) var(--space-3)",
+                        marginBottom: "var(--space-2)",
+                        borderRadius: "var(--radius-sm)",
+                        background: n.level === "warn" ? "var(--tint-warn)" : "var(--panel)",
+                        border: `1px solid ${n.level === "warn" ? "var(--warn)" : "var(--border)"}`,
+                        color: "var(--text-strong)",
+                        fontSize: "var(--font-size-sm)",
+                      }}
+                    >
+                      <span aria-hidden>{n.level === "warn" ? "⚠️" : "ℹ️"}</span>
+                      <span>{n.message}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="tile-grid" style={{ marginTop: 0 }}>
+                {statValues.map((s) => (
+                  <Card key={s.label} ariaLabel={s.label} title={s.label}>
+                    <span style={{ fontSize: "var(--font-size-xl)", fontWeight: "var(--font-weight-bold)" }}>
+                      {s.value}
+                    </span>
+                  </Card>
+                ))}
+              </div>
+
+              <div className="tile-grid" style={{ marginTop: "var(--space-4)" }}>
+                {[
+                  {
+                    title: "Item types (top)",
+                    rows: overview.distributions.itemTypes.map((d) => ({ label: d.label, value: fmt(d.count) })),
+                  },
+                  {
+                    title: "Item locations (top)",
+                    rows: overview.distributions.itemLocations.map((d) => ({ label: d.label, value: fmt(d.count) })),
+                  },
+                  {
+                    title: "Town bank silvers (top)",
+                    rows: overview.distributions.townBanks.map((d) => ({ label: d.label, value: fmt(d.amount) })),
+                  },
+                  {
+                    title: "Richest characters",
+                    rows: overview.distributions.richest.map((d) => ({ label: d.character, value: fmt(d.totalSilver) })),
+                  },
+                  {
+                    title: "Largest inventories",
+                    rows: overview.distributions.topHoards.map((d) => ({ label: d.character, value: fmt(d.itemCount) })),
+                  },
+                ].map((list) => (
+                  <Card key={list.title} title={list.title} padding="compact" ariaLabel={list.title}>
+                    {list.rows.length === 0 && <p className="muted" style={{ margin: 0 }}>No data.</p>}
+                    {list.rows.map((r) => (
+                      <div
+                        key={r.label}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: "var(--control-gap)",
+                          padding: "var(--space-1) 0",
+                          borderBottom: "1px solid var(--border)",
+                        }}
+                      >
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {r.label}
+                        </span>
+                        <span className="muted">{r.value}</span>
+                      </div>
+                    ))}
+                  </Card>
+                ))}
+              </div>
+
+              <h2
+                className="page-header-title"
+                style={{ fontSize: "var(--font-size-lg)", margin: "var(--space-5) 0 var(--space-2) 0" }}
+              >
+                All characters
+              </h2>
+              <Table
+                columns={overviewColumns}
+                rows={filteredOverview}
+                rowKey={(r) => String(r.character)}
+                ariaLabel="Unified per-character overview"
+                loading={overviewLoading}
+                emptyState="No character data found (invdb may not be scanned on this backend)."
+              />
+              <p className="muted" style={{ marginTop: "var(--space-3)", textAlign: "right" }}>
+                {filteredOverview.length} {filteredOverview.length === 1 ? "character" : "characters"} · grand total{" "}
+                <strong>{fmt(overview.stats.totalSilver)}</strong> silvers
+              </p>
+            </>
+          )}
+        </>
+      ) : activeTab === "bank" ? (
         <>
           <Table
             columns={columns}

@@ -219,3 +219,99 @@ describe("InventoryStore", () => {
     expect(() => new InventoryStore(join(dir, "nope.db3"))).toThrow(InventoryDbError);
   });
 });
+
+describe("InventoryStore.overview", () => {
+  let dir: string;
+  let dbPath: string;
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "gsiv-inv-ov-"));
+    dbPath = join(dir, "inv.db3");
+    const db = buildInvFixture();
+    db.exec(`VACUUM INTO '${dbPath.replace(/'/g, "''")}'`);
+    db.close();
+  });
+
+  const stores: InventoryStore[] = [];
+
+  function makeStore(): InventoryStore {
+    const store = new InventoryStore(dbPath);
+    stores.push(store);
+    return store;
+  }
+
+  afterAll(() => {
+    for (const store of stores) store.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("aggregates stats, per-character rows, distributions, and freshness", () => {
+    const store = makeStore();
+    const ov = store.overview(1786000000 + 3 * 86400); // 3 days after fixture data
+
+    expect(ov.stats.characters).toBe(2);
+    expect(ov.stats.accounts).toBe(1); // both fixture chars share account "main"
+    expect(ov.stats.items).toBe(6);
+    expect(ov.stats.totalSilver).toBe(134999); // town rows only (excl the Total row)
+    expect(ov.stats.dataAsOf).toBe(new Date(1786000100 * 1000).toISOString());
+    const freshness = new Map(ov.stats.tableFreshness.map((f) => [f.table, f]));
+    expect(freshness.get("account")).toMatchObject({ asOf: null, daysOld: null });
+    expect(freshness.get("tickets")?.daysOld).toBe(3);
+
+    const fis = ov.perCharacter.find((r) => r.character === "Fisternar");
+    expect(fis).toMatchObject({
+      account: "main",
+      prof: "warrior",
+      level: 100,
+      totalSilver: 125000, // Total row is authoritative
+      itemCount: 4,
+      resourceTotal: 500,
+      energy: "1000/1000",
+      lumnisTotal: 21900,
+      lumnisStatus: "restart",
+      ticketCount: 1,
+    });
+    const nel = ov.perCharacter.find((r) => r.character === "Neleourg");
+    expect(nel?.totalSilver).toBe(9999); // no Total row -> town-sum fallback
+    expect(nel?.itemCount).toBe(2);
+
+    expect(ov.distributions.itemTypes[0]).toEqual({ label: "gem", count: 2 });
+    expect(ov.distributions.itemTypes.map((t) => t.label)).toContain("gem,realm:reim");
+    expect(ov.distributions.itemLocations[0]).toEqual({ label: "inv", count: 3 });
+    expect(ov.distributions.townBanks).toEqual([{ label: "Ta'Vaalor", amount: 134999 }]);
+    expect(ov.distributions.richest[0]).toEqual({ character: "Fisternar", totalSilver: 125000 });
+    expect(ov.distributions.topHoards[0]).toEqual({ character: "Fisternar", itemCount: 4 });
+
+    expect(ov.notices).toEqual([]);
+  });
+
+  it("warns when scanned tables are stale", () => {
+    const store = makeStore();
+    const ov = store.overview(1786000000 + 30 * 86400); // 30 days later
+    const warns = ov.notices.filter((n) => n.level === "warn");
+    expect(warns.length).toBeGreaterThan(0);
+    expect(warns[0].message).toMatch(/\d+ days old/);
+    const msgs = warns.map((w) => w.message).join("\n");
+    expect(msgs).toContain("tickets data is 30 days old");
+  });
+
+  it("flags characters with no items / no bank data", () => {
+    const dir2 = mkdtempSync(join(tmpdir(), "gsiv-inv-ov2-"));
+    const dbPath2 = join(dir2, "inv.db3");
+    const db = buildInvFixture();
+    db.exec("DELETE FROM item; DELETE FROM silver;");
+    db.exec(`VACUUM INTO '${dbPath2.replace(/'/g, "''")}'`);
+    db.close();
+    const store = new InventoryStore(dbPath2);
+    try {
+      const ov = store.overview(1786000000 + 3 * 86400);
+      const msgs = ov.notices.map((n) => n.message).join("\n");
+      expect(msgs).toContain("2 characters have no item data");
+      expect(msgs).toContain("2 characters have no bank data");
+      expect(ov.stats.totalSilver).toBe(0);
+    } finally {
+      store.close();
+      rmSync(dir2, { recursive: true, force: true });
+    }
+  });
+});
