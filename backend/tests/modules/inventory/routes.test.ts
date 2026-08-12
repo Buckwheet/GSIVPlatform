@@ -63,7 +63,7 @@ describe("inventory module routes", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { characters: number; items: number; totalSilver: number };
     expect(body.characters).toBe(2);
-    expect(body.items).toBe(5);
+    expect(body.items).toBe(6);
   });
 
   it("returns search results", async () => {
@@ -264,7 +264,7 @@ describe("inventory scheduler routes", () => {
     const body = (await res.json()) as { running: boolean; chars: number; items: number; data_as_of: string | null };
     expect(body.running).toBe(true);
     expect(body.chars).toBe(2);
-    expect(body.items).toBe(5);
+    expect(body.items).toBe(6);
     expect(body.data_as_of).toBe(new Date(1786000100 * 1000).toISOString());
     expect(cmds.some((c) => c.includes('pgrep -f "[i]nvdb-parallel.sh"'))).toBe(true);
   });
