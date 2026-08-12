@@ -34,6 +34,22 @@ export class InventoryStore {
     return { characters: chars.n, items: items.n, totalSilver: totalSilver.n || 0 };
   }
 
+  /** Newest write timestamp across the tables invdb populates, or null when empty. */
+  latestTimestamp(): number | null {
+    const row = this.db
+      .prepare(
+        `SELECT MAX(ts) AS ts FROM (
+          SELECT MAX(timestamp) AS ts FROM character
+          UNION ALL SELECT MAX(timestamp) FROM item
+          UNION ALL SELECT MAX(timestamp) FROM silver
+          UNION ALL SELECT MAX(timestamp) FROM resource
+          UNION ALL SELECT MAX(timestamp) FROM tickets
+        )`,
+      )
+      .get() as { ts: number | null };
+    return row.ts ?? null;
+  }
+
   characters(): Record<string, unknown>[] {
     return this.db
       .prepare(

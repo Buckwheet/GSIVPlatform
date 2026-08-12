@@ -232,6 +232,7 @@ const routes = {
               last_log: z.string().nullable(),
               chars: z.number(),
               items: z.number(),
+              data_as_of: z.string().nullable(),
             }),
           },
         },
@@ -383,7 +384,10 @@ export function createInventoryModule(store: InventoryStore, options: InventoryM
       router.openapi(routes.scanStatus, (c) => {
         let running = false;
         try {
-          running = exec("pgrep -f invdb-parallel.sh >/dev/null && echo yes || echo no") === "yes";
+          // Bare pgrep -f self-matches its own sh -c wrapper cmdline, so running
+          // was always true (UI showed 'scan running' forever). The [i] bracket
+          // trick matches only real invdb-parallel.sh processes.
+          running = exec('pgrep -f "[i]nvdb-parallel.sh" >/dev/null && echo yes || echo no') === "yes";
         } catch {
           running = false;
         }
@@ -401,7 +405,14 @@ export function createInventoryModule(store: InventoryStore, options: InventoryM
           last_log = null; // GSIVPLATFORM_MARKER
         }
         const sum = store.summary();
-        return c.json({ running, last_log, chars: sum.characters, items: sum.items });
+        const ts = store.latestTimestamp();
+        return c.json({
+          running,
+          last_log,
+          chars: sum.characters,
+          items: sum.items,
+          data_as_of: ts === null ? null : new Date(ts * 1000).toISOString(),
+        });
       });
     },
   };

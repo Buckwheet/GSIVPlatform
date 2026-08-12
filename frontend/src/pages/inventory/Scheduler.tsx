@@ -14,6 +14,7 @@ interface ScanStatus {
   last_log: string | null;
   chars: number;
   items: number;
+  data_as_of: string | null;
 }
 
 function parseHm(v: string): number | null {
@@ -202,6 +203,7 @@ export function InventoryScheduler({ auth }: { auth: AuthState }) {
       {status && (
         <div className="muted" style={{ marginTop: "var(--space-3)", fontSize: "var(--font-size-sm)" }}>
           {status.running ? "● scan running" : `last scan finished`} · {status.chars} chars · {status.items} items
+          {status.data_as_of ? ` · data as of ${new Date(status.data_as_of).toISOString().slice(11, 16)}Z` : ""}
           {status.last_log ? ` · ${status.last_log.split("\n").slice(-2).join(" | ")}` : ""}
         </div>
       )}

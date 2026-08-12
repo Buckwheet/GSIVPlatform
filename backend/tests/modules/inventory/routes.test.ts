@@ -225,17 +225,29 @@ describe("inventory scheduler routes", () => {
     expect(cmds.some((c) => c.includes("invdb-scan-all.sh"))).toBe(true);
   });
 
-  it("GET /scan/status reports running + counts", async () => {
+  it("GET /scan/status reports running + counts + data freshness", async () => {
+    const cmds: string[] = [];
     const exec = (cmd: string) => {
-      if (cmd.includes("pgrep -f invdb-parallel")) return "yes";
+      cmds.push(cmd);
+      if (cmd.includes("pgrep -f")) return "yes";
       return "";
     };
     const app = makeApp("limited:tok:inventory.read", exec);
     const res = await app.request("/api/modules/inventory/scan/status", { headers: H });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { running: boolean; chars: number; items: number };
+    const body = (await res.json()) as { running: boolean; chars: number; items: number; data_as_of: string | null };
     expect(body.running).toBe(true);
     expect(body.chars).toBe(2);
     expect(body.items).toBe(5);
+    expect(body.data_as_of).toBe(new Date(1786000100 * 1000).toISOString());
+    expect(cmds.some((c) => c.includes('pgrep -f "[i]nvdb-parallel.sh"'))).toBe(true);
+  });
+
+  it("GET /scan/status reports not running when no invdb process exists", async () => {
+    const app = makeApp("limited:tok:inventory.read", () => "");
+    const res = await app.request("/api/modules/inventory/scan/status", { headers: H });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { running: boolean };
+    expect(body.running).toBe(false);
   });
 });
