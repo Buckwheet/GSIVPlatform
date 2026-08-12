@@ -52,11 +52,26 @@ const resourceRowSchema = z.object({
 
 const ticketRowSchema = z.object({
   character: z.string(),
+  account: z.string(),
   prof: z.string(),
   level: z.number(),
   source: z.string(),
   amount: z.number(),
   currency: z.string(),
+});
+
+const lumnisRowSchema = z.object({
+  character: z.string(),
+  account: z.string(),
+  prof: z.string(),
+  level: z.number(),
+  status: z.string(),
+  triple: z.number(),
+  double: z.number(),
+  total: z.number(),
+  start_day: z.string(),
+  start_time: z.string(),
+  last_schedule: z.string(),
 });
 
 const routes = {
@@ -138,6 +153,13 @@ const routes = {
     path: "/tickets",
     responses: {
       200: { content: { "application/json": { schema: z.array(ticketRowSchema) } }, description: "Tickets" },
+    },
+  }),
+  lumnis: createRoute({
+    method: "get",
+    path: "/lumnis",
+    responses: {
+      200: { content: { "application/json": { schema: z.array(lumnisRowSchema) } }, description: "Lumnis status" },
     },
   }),
   time: createRoute({
@@ -319,6 +341,7 @@ export function createInventoryModule(store: InventoryStore, options: InventoryM
       "GET /search": ["inventory.read"],
       "GET /resources": ["inventory.read"],
       "GET /tickets": ["inventory.read"],
+      "GET /lumnis": ["inventory.read"],
       "GET /time": ["inventory.read"],
       "GET /schedule": ["inventory.read"],
       "PUT /schedule": ["inventory.write"],
@@ -353,6 +376,7 @@ export function createInventoryModule(store: InventoryStore, options: InventoryM
       router.openapi(routes.tickets, (c) =>
         c.json(store.tickets() as unknown as Array<z.infer<typeof ticketRowSchema>>),
       );
+      router.openapi(routes.lumnis, (c) => c.json(store.lumnis() as unknown as Array<z.infer<typeof lumnisRowSchema>>));
       router.openapi(routes.time, (c) => c.json({ now: new Date().toISOString(), tz: "UTC" }));
       router.openapi(routes.schedule, (c) => c.json(scheduleState(exec)));
       router.openapi(routes.setSchedule, (c) => {

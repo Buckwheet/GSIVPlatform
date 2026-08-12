@@ -94,7 +94,21 @@ describe("InventoryStore", () => {
     const store = makeStore();
     const tkts = store.tickets();
     expect(tkts.length).toBe(1);
-    expect(tkts[0]).toMatchObject({ character: "Fisternar", amount: 3, currency: "ticket" });
+    expect(tkts[0]).toMatchObject({
+      character: "Fisternar",
+      account: "main",
+      source: "quest",
+      amount: 3,
+      currency: "ticket",
+    });
+  });
+
+  it("lists lumnis status", () => {
+    const store = makeStore();
+    const lum = store.lumnis();
+    expect(lum.length).toBe(2);
+    expect(lum[0]).toMatchObject({ character: "Fisternar", account: "main", status: "restart", total: 21900 });
+    expect(lum[1]).toMatchObject({ character: "Neleourg", last_schedule: "2023-02-26 13:47:32" });
   });
 
   it("throws InventoryDbError on missing db", () => {

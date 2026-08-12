@@ -122,10 +122,21 @@ export class InventoryStore {
       .all() as Record<string, unknown>[];
   }
 
+  lumnis(): Record<string, unknown>[] {
+    return this.db
+      .prepare(
+        `SELECT c.name as character, c.account, c.prof, c.level,
+          CAST(l.status AS TEXT) as status, l.triple, l.double, l.total,
+          l.start_day, l.start_time, l.last_schedule
+         FROM lumnis l JOIN character c ON l.character_id = c.id ORDER BY c.name`,
+      )
+      .all() as Record<string, unknown>[];
+  }
+
   tickets(): Record<string, unknown>[] {
     return this.db
       .prepare(
-        `SELECT c.name as character, c.prof, c.level, t.source, t.amount, t.currency
+        `SELECT c.name as character, c.account, c.prof, c.level, t.source, t.amount, t.currency
          FROM tickets t JOIN character c ON t.character_id = c.id ORDER BY c.name, t.source`,
       )
       .all() as Record<string, unknown>[];

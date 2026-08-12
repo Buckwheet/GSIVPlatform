@@ -24,6 +24,7 @@ export function buildInvFixture(): Database.Database {
     );
     CREATE TABLE tickets (character_id INTEGER NOT NULL, source TEXT NOT NULL, amount INTEGER NOT NULL, currency TEXT NOT NULL, timestamp INTEGER NOT NULL, UNIQUE(character_id, source));
     CREATE TABLE resource (character_id INTEGER NOT NULL PRIMARY KEY, energy TEXT NOT NULL DEFAULT '', weekly INTEGER NOT NULL DEFAULT 0, total INTEGER NOT NULL DEFAULT 0, suffused INTEGER NOT NULL DEFAULT 0, favor INTEGER NOT NULL DEFAULT 0, bonus INTEGER NOT NULL DEFAULT 0, timestamp INTEGER NOT NULL DEFAULT 0);
+    CREATE TABLE lumnis (character_id INTEGER NOT NULL, status TEXT NOT NULL DEFAULT '', triple INTEGER NOT NULL DEFAULT 0, double INTEGER NOT NULL DEFAULT 0, total INTEGER NOT NULL DEFAULT 0, start_day TEXT NOT NULL DEFAULT '', start_time TEXT NOT NULL DEFAULT '', last_schedule TEXT NOT NULL DEFAULT '', timestamp INTEGER NOT NULL DEFAULT 0);
   `);
 
   const insChar = db.prepare(
@@ -94,6 +95,12 @@ export function buildInvFixture(): Database.Database {
   );
   insRes.run(1, "1000/1000", 0, 500, 0, 100, 0, 1786000000);
   insRes.run(2, "800/800", 0, 300, 0, 75, 0, 1786000100);
+
+  const insLum = db.prepare(
+    "INSERT INTO lumnis (character_id, status, triple, double, total, start_day, start_time, last_schedule, timestamp) VALUES (?,?,?,?,?,?,?,?,?)",
+  );
+  insLum.run(1, "restart", 7300, 7300, 21900, "", "", "", 1786000000);
+  insLum.run(2, "restart", 7300, 7300, 21900, "Sunday", "14:00", "2023-02-26 13:47:32", 1786000100);
 
   return db;
 }
