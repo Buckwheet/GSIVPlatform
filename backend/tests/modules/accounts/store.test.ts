@@ -1,5 +1,7 @@
+import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { CoreDb } from "../../../src/core/db.js";
 import { EntryYaml } from "../../../src/core/entry-yaml.js";
 import { Ruby } from "../../../src/core/ruby.js";
@@ -7,6 +9,9 @@ import { Sge } from "../../../src/core/sge.js";
 import { AccountsStore } from "../../../src/modules/accounts/store.js";
 
 const FIXTURE = join(import.meta.dirname, "..", "..", "fixtures", "entry-yaml.fixture.yaml");
+const TMP = mkdtempSync(join(tmpdir(), "acct-store-"));
+let storeYamlCounter = 0;
+afterAll(() => rmSync(TMP, { recursive: true, force: true }));
 
 function okRuby(): Ruby {
   return new Ruby(async () => ({ stdout: "PLAINTEXT", stderr: "", code: 0 }));
@@ -47,11 +52,13 @@ function sgeOk(chars: { slot: string; name: string }[]): Sge {
 }
 
 describe("AccountsStore", () => {
-  function makeStore(overrides: { ruby?: Ruby; sge?: Sge; delayMs?: number } = {}) {
+  function makeStore(overrides: { yaml?: EntryYaml; ruby?: Ruby; sge?: Sge; delayMs?: number } = {}) {
     const db = new CoreDb(":memory:");
+    const yamlPath = join(TMP, `entry-${++storeYamlCounter}.yaml`);
+    copyFileSync(FIXTURE, yamlPath);
     const store = new AccountsStore(
       db,
-      new EntryYaml(FIXTURE),
+      overrides.yaml ?? new EntryYaml(yamlPath),
       overrides.ruby ?? okRuby(),
       overrides.sge ?? sgeError(new Error("no network")),
       {
@@ -191,5 +198,44 @@ describe("AccountsStore", () => {
     expect(zepherus).toMatchObject({ status: "active", auto_added: 0 });
     const fisternar = list.characters.find((c) => c.char_name === "Fisternar");
     expect(fisternar).toMatchObject({ status: "entry_only", auto_added: 0 });
+  });
+
+  it("auto-adds a new SGE char to entry.yaml (auto_added=1)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "acct-auto-"));
+    const yamlPath = join(dir, "entry.yaml");
+    copyFileSync(FIXTURE, yamlPath);
+    const yaml = new EntryYaml(yamlPath);
+    const { store } = makeStore({ yaml, sge: sgeOk([{ slot: "1", name: "Freshchar" }]) });
+    const res = await store.scanOne("BUCKWHEET");
+    expect(res.ok).toBe(true);
+    const yamlChars = yaml.read().map((c) => c.char_name);
+    expect(yamlChars).toContain("Freshchar");
+    const list = await store.list();
+    const fresh = list.characters.find((c) => c.char_name === "Freshchar");
+    expect(fresh?.auto_added).toBe(1);
+    expect(fresh?.status).toBe("active");
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("auto-add failure records the row but does not abort the scan", async () => {
+    class FailingYaml extends EntryYaml {
+      override addCharacter(): never {
+        throw new Error("boom");
+      }
+    }
+    const dir = mkdtempSync(join(tmpdir(), "acct-auto-fail-"));
+    const yamlPath = join(dir, "entry.yaml");
+    copyFileSync(FIXTURE, yamlPath);
+    const yaml = new FailingYaml(yamlPath);
+    const { store } = makeStore({ yaml, sge: sgeOk([{ slot: "1", name: "Freshchar" }]) });
+    const res = await store.scanOne("BUCKWHEET");
+    expect(res.ok).toBe(true);
+    const list = await store.list();
+    const fresh = list.characters.find((c) => c.char_name === "Freshchar");
+    expect(fresh).toBeDefined();
+    expect(fresh?.auto_added).toBe(0);
+    expect(fresh?.status).toBe("active");
+    expect(list.accounts[0].auth_status).toBe("ok");
+    rmSync(dir, { recursive: true, force: true });
   });
 });

@@ -145,6 +145,21 @@ export class AccountsStore {
       const sgeChars = await this.sge.listCharacters(accountName, decrypted.plain, gameCode);
       authStatus = "ok";
       const yamlMap = new Map(chars.map((c) => [c.char_name.toLowerCase(), c]));
+      const autoAdded = new Set<string>();
+      for (const sc of sgeChars) {
+        if (yamlMap.has(sc.name.toLowerCase())) continue;
+        try {
+          const r = this.yaml.addCharacter(accountName, sc.name, gameCode);
+          if (r.ok) {
+            autoAdded.add(sc.name.toLowerCase());
+            console.error(`roster-sync: auto-added ${sc.name} to entry.yaml (${accountName})`);
+          } else {
+            console.error(`roster-sync: auto-add failed for ${sc.name} (${accountName}): ${r.error}`);
+          }
+        } catch (err) {
+          console.error(`roster-sync: auto-add error for ${sc.name} (${accountName}):`, (err as Error).message);
+        }
+      }
       for (const sc of sgeChars) {
         characters.push({
           account_name: accountName,
@@ -153,6 +168,7 @@ export class AccountsStore {
           game_code: yamlMap.get(sc.name.toLowerCase())?.game_code ?? gameCode,
           source: "sge",
           status: "active",
+          auto_added: autoAdded.has(sc.name.toLowerCase()) ? 1 : 0,
         });
       }
       const sgeNames = new Set(sgeChars.map((c) => c.name.toLowerCase()));
