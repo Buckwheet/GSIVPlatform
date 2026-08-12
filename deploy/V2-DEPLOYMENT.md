@@ -65,7 +65,25 @@ ssh ubuntu@51.68.235.144 "set -e
   sudo systemctl restart gsiv-platform"
 ```
 
-Frontend assets use hashed filenames, so a stale browser cache is fine; `index.html` is served with `no-cache` by Caddy.
+## Caching (browser/Cloudflare) — set 2026-08-12 in /etc/caddy/Caddyfile (@gsiv handle)
+
+Frontend assets use hashed filenames (Vite content hashes). `index.html` + SPA routes are served with
+`Cache-Control: no-cache, must-revalidate` — the browser revalidates on every load, so each deploy shows
+the new UI immediately (Cloudflare passes it through, `cf-cache-status: DYNAMIC`). `/assets/*` is served
+with `public, max-age=31536000, immutable`.
+
+Caddy gotchas (hit 2026-08-12 — the UI served a stale bundle for hours):
+- Caddy did NOT auto-reload on Caddyfile edits (service ran a config from weeks earlier). After editing:
+  `sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy`.
+- `header !field Value` compiles as a REPLACE operation on a header literally named `!field`, not a negated
+  matcher. For negation use a named matcher: `@notassets { not path /assets/* }` + `header @notassets ...`.
+- With multiple `header` directives setting the same field, the generic (matcher-less) rule won regardless of
+  order, so keep the rules mutually exclusive (`/assets/*` vs `@notassets`).
+- If a browser still shows a stale UI after a deploy: hard-refresh once (Ctrl+Shift+R); Cloudflare: Caching →
+  Purge Everything (no CF API token wired — manual).
+
+Full server runbook (SSH, deploy, cache, invdb diagnostics) is logged as a comment block in
+`/opt/gsiv-platform/backend/.env` on the server.
 
 ## Verify
 
