@@ -141,4 +141,55 @@ describe("AccountsStore", () => {
     expect(list.accounts).toEqual([]);
     expect(list.characters).toEqual([]);
   });
+
+  it("upserts per char: keeps stale rows, marks entry_only, preserves last_seen", async () => {
+    let sgeChars = [
+      { slot: "1", name: "Fisternar" },
+      { slot: "2", name: "Zepherus" },
+    ];
+    const sge = new Sge((_h, _p, onData, _onError) => {
+      const fields = sgeChars.flatMap((c) => [c.slot, c.name]);
+      const chunks = ["MASK", "A\tKEY=abc", "M", "N", "G", `C\t1\tGS3\t1\t2\t${fields.join("\t")}`];
+      let i = 0;
+      const deliver = (idx: number) => {
+        if (idx < chunks.length) setImmediate(() => onData(Buffer.from(chunks[idx], "binary")));
+      };
+      deliver(0);
+      return {
+        write: () => {
+          i += 1;
+          deliver(i);
+        },
+        destroy: () => {},
+      };
+    });
+    const { store } = makeStore({ sge });
+    await store.scanOne("BUCKWHEET");
+    const firstList = await store.list();
+    const firstSeen = firstList.characters.find((c) => c.char_name === "Fisternar")?.last_seen;
+    expect(firstSeen).toBeTypeOf("number"); // Fisternar was active on SGE in scan 1
+    // Fisternar vanishes from SGE; entry.yaml still lists it
+    sgeChars = [{ slot: "1", name: "Zepherus" }];
+    await store.scanOne("BUCKWHEET");
+    const list = await store.list();
+    const chars = list.characters.filter((c) => c.account_name === "BUCKWHEET");
+    const fisternar = chars.find((c) => c.char_name === "Fisternar");
+    expect(fisternar?.status).toBe("entry_only");
+    expect(fisternar?.last_seen).toBe(firstSeen); // last_seen preserved, not reset
+    const zepherus = chars.find((c) => c.char_name === "Zepherus");
+    expect(zepherus?.status).toBe("active");
+    expect(zepherus?.last_seen).toBeGreaterThanOrEqual(firstSeen as number);
+    // second scan did NOT delete the row set
+    expect(chars.map((c) => c.char_name).sort()).toEqual(["Fisternar", "Zepherus"]);
+  });
+
+  it("exposes status and auto_added columns on scanned rows", async () => {
+    const { store } = makeStore({ sge: sgeOk([{ slot: "1", name: "Zepherus" }]) });
+    await store.scanOne("BUCKWHEET");
+    const list = await store.list();
+    const zepherus = list.characters.find((c) => c.char_name === "Zepherus");
+    expect(zepherus).toMatchObject({ status: "active", auto_added: 0 });
+    const fisternar = list.characters.find((c) => c.char_name === "Fisternar");
+    expect(fisternar).toMatchObject({ status: "entry_only", auto_added: 0 });
+  });
 });

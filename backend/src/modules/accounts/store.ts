@@ -30,6 +30,9 @@ export interface ScanCharacterRow {
   race?: string | null;
   profession?: string | null;
   last_login?: string | null;
+  status?: string;
+  auto_added?: number;
+  last_seen?: number | null;
 }
 
 const MIGRATIONS = [
@@ -54,6 +57,8 @@ const MIGRATIONS = [
     last_seen INTEGER
   )`,
   `CREATE INDEX IF NOT EXISTS idx_acct_chars ON account_characters(account_name)`,
+  `ALTER TABLE account_characters ADD COLUMN status TEXT NOT NULL DEFAULT 'active'`,
+  `ALTER TABLE account_characters ADD COLUMN auto_added INTEGER NOT NULL DEFAULT 0`,
 ];
 
 export class AccountsStore {
@@ -147,6 +152,7 @@ export class AccountsStore {
           slot: sc.slot,
           game_code: yamlMap.get(sc.name.toLowerCase())?.game_code ?? gameCode,
           source: "sge",
+          status: "active",
         });
       }
       const sgeNames = new Set(sgeChars.map((c) => c.name.toLowerCase()));
@@ -158,6 +164,7 @@ export class AccountsStore {
             slot: null,
             game_code: c.game_code,
             source: "entry_yaml",
+            status: "entry_only",
           });
         }
       }
@@ -258,6 +265,7 @@ export class AccountsStore {
       slot: null,
       game_code: c.game_code,
       source: "entry_yaml",
+      status: "entry_only",
     }));
   }
 
@@ -282,24 +290,28 @@ export class AccountsStore {
          ON CONFLICT(account_name) DO UPDATE SET auth_status=excluded.auth_status, auth_error=excluded.auth_error, last_scan=excluded.last_scan`,
       )
       .run(accountName, authStatus, authError, Date.now());
-    this.db.prepare("DELETE FROM account_characters WHERE account_name = ?").run(accountName);
+    const now = Date.now();
+    const find = this.db.prepare(
+      "SELECT last_seen FROM account_characters WHERE account_name = ? AND LOWER(char_name) = LOWER(?)",
+    );
+    const update = this.db.prepare(
+      `UPDATE account_characters
+       SET slot = ?, game_code = ?, source = ?, status = ?, auto_added = ?,
+           last_seen = COALESCE(?, last_seen)
+       WHERE account_name = ? AND LOWER(char_name) = LOWER(?)`,
+    );
     const insert = this.db.prepare(
-      `INSERT INTO account_characters (account_name, char_name, slot, game_code, source, level, race, profession, last_login, last_seen)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO account_characters (account_name, char_name, slot, game_code, source, status, auto_added, last_seen)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     for (const c of characters) {
-      insert.run(
-        accountName,
-        c.char_name,
-        c.slot,
-        c.game_code,
-        c.source,
-        c.level ?? null,
-        c.race ?? null,
-        c.profession ?? null,
-        c.last_login ?? null,
-        Date.now(),
-      );
+      const status = c.status ?? "active";
+      const lastSeen = status === "active" ? now : null; // entry_only keeps its history
+      if (find.get(accountName, c.char_name)) {
+        update.run(c.slot, c.game_code, c.source, status, c.auto_added ?? 0, lastSeen, accountName, c.char_name);
+      } else {
+        insert.run(accountName, c.char_name, c.slot, c.game_code, c.source, status, c.auto_added ?? 0, lastSeen);
+      }
     }
   }
 }
