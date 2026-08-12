@@ -95,7 +95,16 @@ const routes = {
       200: {
         content: {
           "application/json": {
-            schema: z.array(z.object({ character: z.string(), bank: z.string(), silvers: z.number() })),
+            schema: z.array(
+              z.object({
+                character: z.string(),
+                account: z.string(),
+                prof: z.string(),
+                level: z.number(),
+                bank: z.string(),
+                silvers: z.number(),
+              }),
+            ),
           },
         },
         description: "Bank silvers",
@@ -321,7 +330,16 @@ export function createInventoryModule(store: InventoryStore, options: InventoryM
       );
       router.openapi(routes.locations, (c) => c.json(store.locations() as unknown as { name: string }[]));
       router.openapi(routes.bank, (c) =>
-        c.json(store.bank() as unknown as { character: string; bank: string; silvers: number }[]),
+        c.json(
+          store.bank() as unknown as {
+            character: string;
+            account: string;
+            prof: string;
+            level: number;
+            bank: string;
+            silvers: number;
+          }[],
+        ),
       );
       router.openapi(routes.search, (c) => {
         const { q, character, location } = c.req.valid("query");

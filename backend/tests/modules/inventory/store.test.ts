@@ -58,7 +58,9 @@ describe("InventoryStore", () => {
     const bank = store.bank();
     expect(bank.length).toBeGreaterThanOrEqual(2);
     const fis = bank.find((b) => b.character === "Fisternar");
-    expect(fis?.silvers).toBe(125000);
+    expect(fis).toMatchObject({ silvers: 125000, account: "main", prof: "warrior", level: 100 });
+    const total = bank.find((b) => b.character === "Fisternar" && b.bank === "Total");
+    expect(total?.silvers).toBe(125000);
   });
 
   it("searches items by name substring", () => {
