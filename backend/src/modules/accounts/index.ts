@@ -221,6 +221,28 @@ const entryDeleteCharacterRoute = createRoute({
   },
 });
 
+const cleanupStaleRoute = createRoute({
+  method: "post",
+  path: "/accounts/stale/cleanup",
+  request: { body: { content: { "application/json": { schema: totpOnlyBody } } } },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            ok: z.boolean(),
+            removedAccounts: z.number(),
+            removedCharacters: z.number(),
+            steps: z.array(z.object({ action: z.string(), result: z.string() })),
+          }),
+        },
+      },
+      description: "stale cleanup complete",
+    },
+    403: { description: "TOTP required/invalid" },
+  },
+});
+
 /** v1 TOTP gate: 2FA must be configured and the code valid. */
 function requireTotp(totp: Totp, code?: string): string | null {
   if (!totp.isSetup()) return "2FA not configured — set up TOTP first";
@@ -242,6 +264,7 @@ export function createAccountsModule(store: AccountsStore, totp: Totp): Module {
       "GET /accounts": ["accounts.read"],
       "GET /accounts/scan/status": ["accounts.read"],
       "GET /accounts/stale": ["accounts.read"],
+      "POST /accounts/stale/cleanup": ["accounts.write"],
       "POST /accounts/scan": ["accounts.write"],
       "POST /accounts/:name/scan": ["accounts.write"],
       "GET /totp/status": ["accounts.read"],
@@ -332,6 +355,14 @@ export function createAccountsModule(store: AccountsStore, totp: Totp): Module {
         const { steps } = await store.deleteCharacterWithSteps(c.req.valid("param").name, c.req.valid("param").char);
         if (!steps.some((s) => s.result === "ok")) return c.json({ error: "character not found anywhere", steps }, 404);
         return c.json({ ok: true, steps }, 200);
+      });
+
+      router.openapi(cleanupStaleRoute, async (c) => {
+        const { totp_code } = c.req.valid("json");
+        const err = requireTotp(totp, totp_code);
+        if (err) return c.json({ error: err }, 403);
+        const res = await store.cleanupStale();
+        return c.json(res, 200);
       });
     },
   };

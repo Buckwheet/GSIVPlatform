@@ -1,5 +1,6 @@
 import type { CoreDb } from "../../core/db.js";
 import type { EntryYaml } from "../../core/entry-yaml.js";
+import type { InvDbCleaner } from "../../core/inv-db.js";
 import type { Ruby } from "../../core/ruby.js";
 import type { Sge } from "../../core/sge.js";
 
@@ -71,6 +72,7 @@ export class AccountsStore {
     private yaml: EntryYaml,
     private ruby: Ruby,
     private sge: Sge,
+    private invDb: InvDbCleaner,
     private opts: { delayMs?: number } = {},
   ) {
     db.migrate("accounts", MIGRATIONS);
@@ -261,6 +263,61 @@ export class AccountsStore {
       )
       .all() as ScanAccountRow[];
     return { characters, accounts };
+  }
+
+  /**
+   * Drop every flagged account/char from entry.yaml + gsiv.db + inv.db3.
+   * Dead accounts are removed first (taking their chars with them); the
+   * remaining entry_only chars on live accounts are removed individually.
+   * No password decrypt — deletion only needs names.
+   */
+  async cleanupStale(): Promise<{
+    ok: boolean;
+    removedAccounts: number;
+    removedCharacters: number;
+    steps: { action: string; result: string }[];
+  }> {
+    const { accounts, characters } = await this.stale();
+    const steps: { action: string; result: string }[] = [];
+    let removedAccounts = 0;
+    let removedCharacters = 0;
+    const dead = new Set(accounts.map((a) => a.account_name));
+
+    for (const acct of accounts) {
+      const key = acct.account_name;
+      const y = this.yaml.deleteAccount(key);
+      steps.push({ action: `Remove ${key} from entry.yaml`, result: y.removed ? "ok" : "not found" });
+      if (y.removed) removedAccounts += 1;
+      await this.deleteAccount(key);
+      steps.push({ action: `Remove ${key} from dashboard DB`, result: "ok" });
+      const inv = this.invDb.deleteAccounts([key]);
+      steps.push({
+        action: `Remove ${key} chars from inv.db3`,
+        result: inv.ok ? `ok (${inv.removedCharacters} chars, ${inv.removedItems} items)` : `error: ${inv.error}`,
+      });
+    }
+
+    for (const ch of characters) {
+      if (dead.has(ch.account_name)) continue; // already removed with the account
+      const y = this.yaml.deleteCharacter(ch.account_name, ch.char_name);
+      steps.push({
+        action: `Remove ${ch.char_name} (${ch.account_name}) from entry.yaml`,
+        result: y.removed ? "ok" : "not found",
+      });
+      if (y.removed) removedCharacters += 1;
+      const dbRemoved = (await this.deleteCharacter(ch.account_name, ch.char_name)) > 0;
+      steps.push({
+        action: `Remove ${ch.char_name} (${ch.account_name}) from dashboard DB`,
+        result: dbRemoved ? "ok" : "not found",
+      });
+      const inv = this.invDb.deleteCharacters([{ name: ch.char_name, account: ch.account_name }]);
+      steps.push({
+        action: `Remove ${ch.char_name} (${ch.account_name}) from inv.db3`,
+        result: inv.ok ? `ok (${inv.removedCharacters} chars, ${inv.removedItems} items)` : `error: ${inv.error}`,
+      });
+    }
+
+    return { ok: true, removedAccounts, removedCharacters, steps };
   }
 
   /** Delete an account: entry.yaml + scan db, with per-step results (v1 steps shape). */

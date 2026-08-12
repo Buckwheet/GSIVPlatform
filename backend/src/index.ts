@@ -6,6 +6,7 @@ import { ConfigFiles } from "./core/config-files.js";
 import { CoreDb } from "./core/db.js";
 import { EntryYaml } from "./core/entry-yaml.js";
 import { EventLog } from "./core/event-log.js";
+import { InvDb } from "./core/inv-db.js";
 import { createKV } from "./core/kv.js";
 import { LichDb } from "./core/lich-db.js";
 import { Registry } from "./core/registry.js";
@@ -100,7 +101,7 @@ registry.register(
     systemd: new Systemd(),
   }),
 );
-const accountsStore = new AccountsStore(db, new EntryYaml(), new Ruby(), new Sge());
+const accountsStore = new AccountsStore(db, new EntryYaml(), new Ruby(), new Sge(), new InvDb());
 const totp = new Totp();
 registry.register(createAccountsModule(accountsStore, totp));
 

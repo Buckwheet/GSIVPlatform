@@ -41,6 +41,8 @@ export default function Accounts({ auth }: { auth: AuthState }) {
   const [scanning, setScanning] = useState(false);
   const [stale, setStale] = useState<StaleReport | null>(null);
   const [adding, setAdding] = useState(false);
+  const [cleanupCode, setCleanupCode] = useState("");
+  const [cleaning, setCleaning] = useState(false);
   const { addToast } = useToast();
   const write = can(auth, ["accounts.write"]);
 
@@ -134,6 +136,35 @@ export default function Accounts({ auth }: { auth: AuthState }) {
       });
     } finally {
       setAdding(false);
+    }
+  }
+
+  async function cleanupStale() {
+    if (!cleanupCode) return;
+    setCleaning(true);
+    try {
+      const res = await api<{
+        ok: boolean;
+        removedAccounts: number;
+        removedCharacters: number;
+        steps: { action: string; result: string }[];
+      }>("/modules/accounts/accounts/stale/cleanup", auth, {
+        method: "POST",
+        body: JSON.stringify({ totp_code: cleanupCode }),
+      });
+      setCleanupCode("");
+      addToast({
+        tone: "good",
+        title: "Cleanup Complete",
+        message: `Removed ${res.removedAccounts} account(s) and ${res.removedCharacters} character(s) from entry.yaml, inv.db3 and the dashboard.`,
+      });
+      await refresh();
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : "failed";
+      setError(msg);
+      addToast({ tone: "bad", title: "Cleanup Failed", message: msg });
+    } finally {
+      setCleaning(false);
     }
   }
 
@@ -248,6 +279,28 @@ export default function Accounts({ auth }: { auth: AuthState }) {
               ))}
             </ul>
           </details>
+          {write && totpSetup && (
+            <div style={{ marginTop: "var(--space-2)", display: "flex", gap: "var(--space-2)", alignItems: "flex-end" }}>
+              <div style={{ flex: "0 0 150px" }}>
+                <Input
+                  id="cleanupTotp"
+                  label="TOTP code"
+                  value={cleanupCode}
+                  onChange={setCleanupCode}
+                  placeholder="000000"
+                />
+              </div>
+              <Button
+                variant="primary"
+                onClick={cleanupStale}
+                disabled={!cleanupCode || cleaning}
+                loading={cleaning}
+                ariaLabel="Clean up stale accounts and characters"
+              >
+                Clean up stale
+              </Button>
+            </div>
+          )}
         </div>
       )}
 

@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Auth } from "../../../src/core/auth.js";
 import { CoreDb } from "../../../src/core/db.js";
 import { EntryYaml } from "../../../src/core/entry-yaml.js";
+import type { InvDbCleaner } from "../../../src/core/inv-db.js";
 import { InMemoryKV } from "../../../src/core/kv.js";
 import { Registry } from "../../../src/core/registry.js";
 import { Ruby } from "../../../src/core/ruby.js";
@@ -21,6 +22,13 @@ const FIXTURE = join(import.meta.dirname, "..", "..", "fixtures", "entry-yaml.fi
 const TMP = mkdtempSync(join(tmpdir(), "accounts-routes-"));
 const ENTRY_YAML = join(TMP, "entry.yaml");
 const TOTP_SECRET = join(TMP, "totp_secret");
+
+function fakeInvDb(): InvDbCleaner {
+  return {
+    deleteAccounts: () => ({ ok: true, removedCharacters: 0, removedItems: 0 }),
+    deleteCharacters: () => ({ ok: true, removedCharacters: 0, removedItems: 0 }),
+  };
+}
 copyFileSync(FIXTURE, ENTRY_YAML);
 
 describe("accounts module routes", () => {
@@ -40,7 +48,7 @@ describe("accounts module routes", () => {
       setImmediate(() => onError(new Error("no network")));
       return { write: () => {}, destroy: () => {} };
     });
-    const store = new AccountsStore(db, new EntryYaml(ENTRY_YAML), ruby, sge, { delayMs: 0 });
+    const store = new AccountsStore(db, new EntryYaml(ENTRY_YAML), ruby, sge, fakeInvDb(), { delayMs: 0 });
     const totp = new Totp(TOTP_SECRET);
     const registry = new Registry();
     registry.register(healthModule);
@@ -249,7 +257,7 @@ describe("accounts module routes", () => {
         destroy: () => {},
       };
     });
-    const store = new AccountsStore(db, new EntryYaml(ENTRY_YAML), ruby, sge, { delayMs: 0 });
+    const store = new AccountsStore(db, new EntryYaml(ENTRY_YAML), ruby, sge, fakeInvDb(), { delayMs: 0 });
     const registry = new Registry();
     registry.register(healthModule);
     registry.register(createAccountsModule(store, new Totp(TOTP_SECRET)));
@@ -269,5 +277,28 @@ describe("accounts module routes", () => {
     expect(buckwheet.map((c) => c.char_name).sort()).toEqual(["Fisternar"]);
     expect(buckwheet.every((c) => c.status === "entry_only")).toBe(true);
     expect(Array.isArray(body.accounts)).toBe(true);
+  });
+
+  it("POST /accounts/stale/cleanup requires accounts.write + TOTP", async () => {
+    new Totp(TOTP_SECRET).reset();
+    const app = makeApp("limited:tok:accounts.read,accounts.write");
+    const noSetup = await post(app, "/api/modules/accounts/accounts/stale/cleanup", { totp_code: "" });
+    expect(noSetup.status).toBe(403);
+    expect((await noSetup.json()) as { error: string }).toEqual({ error: "2FA not configured — set up TOTP first" });
+
+    const secret = await ensureSecret(app);
+    const wrong = await post(app, "/api/modules/accounts/accounts/stale/cleanup", { totp_code: "000000" });
+    expect(wrong.status).toBe(403);
+
+    const ok = await post(app, "/api/modules/accounts/accounts/stale/cleanup", { totp_code: currentCode(secret) });
+    expect(ok.status).toBe(200);
+    const body = (await ok.json()) as {
+      ok: boolean;
+      removedAccounts: number;
+      removedCharacters: number;
+      steps: unknown[];
+    };
+    expect(body.ok).toBe(true);
+    expect(Array.isArray(body.steps)).toBe(true);
   });
 });

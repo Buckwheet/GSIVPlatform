@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { CoreDb } from "../../../src/core/db.js";
 import { EntryYaml } from "../../../src/core/entry-yaml.js";
+import type { InvDbCleaner } from "../../../src/core/inv-db.js";
 import { Ruby } from "../../../src/core/ruby.js";
 import { Sge } from "../../../src/core/sge.js";
 import { AccountsStore } from "../../../src/modules/accounts/store.js";
@@ -51,8 +52,23 @@ function sgeOk(chars: { slot: string; name: string }[]): Sge {
   });
 }
 
+class FakeInvDb implements InvDbCleaner {
+  deletedAccounts: string[] = [];
+  deletedCharacters: { name: string; account: string }[] = [];
+  deleteAccounts(accounts: string[]) {
+    this.deletedAccounts.push(...accounts);
+    return { ok: true, removedCharacters: accounts.length, removedItems: 0 };
+  }
+  deleteCharacters(targets: { name: string; account: string }[]) {
+    this.deletedCharacters.push(...targets);
+    return { ok: true, removedCharacters: targets.length, removedItems: 0 };
+  }
+}
+
 describe("AccountsStore", () => {
-  function makeStore(overrides: { yaml?: EntryYaml; ruby?: Ruby; sge?: Sge; delayMs?: number } = {}) {
+  function makeStore(
+    overrides: { yaml?: EntryYaml; ruby?: Ruby; sge?: Sge; invDb?: InvDbCleaner; delayMs?: number } = {},
+  ) {
     const db = new CoreDb(":memory:");
     const yamlPath = join(TMP, `entry-${++storeYamlCounter}.yaml`);
     copyFileSync(FIXTURE, yamlPath);
@@ -61,6 +77,7 @@ describe("AccountsStore", () => {
       overrides.yaml ?? new EntryYaml(yamlPath),
       overrides.ruby ?? okRuby(),
       overrides.sge ?? sgeError(new Error("no network")),
+      overrides.invDb ?? new FakeInvDb(),
       {
         delayMs: overrides.delayMs ?? 0,
       },
@@ -236,6 +253,56 @@ describe("AccountsStore", () => {
     expect(fresh?.auto_added).toBe(0);
     expect(fresh?.status).toBe("active");
     expect(list.accounts[0].auth_status).toBe("ok");
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("cleanupStale removes dead accounts + stale chars from entry.yaml, gsiv.db, and inv.db3", async () => {
+    const fake = new FakeInvDb();
+    const dir = mkdtempSync(join(tmpdir(), "acct-cleanup-"));
+    const yamlPath = join(dir, "entry.yaml");
+    copyFileSync(FIXTURE, yamlPath);
+    const yaml = new EntryYaml(yamlPath);
+    const { db, store } = makeStore({ yaml, invDb: fake });
+
+    // Seed gsiv.db directly (no scan): BUCKWHEET = dead account; ALT = live with a stale char.
+    const ins = db.get();
+    ins
+      .prepare("INSERT INTO accounts (account_name, auth_status, last_scan) VALUES ('BUCKWHEET','bad_password',1)")
+      .run();
+    ins.prepare("INSERT INTO accounts (account_name, auth_status, last_scan) VALUES ('ALT','ok',1)").run();
+    ins
+      .prepare(
+        "INSERT INTO account_characters (account_name, char_name, status) VALUES ('BUCKWHEET','Fisternar','entry_only')",
+      )
+      .run();
+    ins
+      .prepare(
+        "INSERT INTO account_characters (account_name, char_name, status) VALUES ('BUCKWHEET','Zepherus','entry_only')",
+      )
+      .run();
+    ins
+      .prepare(
+        "INSERT INTO account_characters (account_name, char_name, status) VALUES ('ALT','Neleourg','entry_only')",
+      )
+      .run();
+
+    const res = await store.cleanupStale();
+    expect(res.ok).toBe(true);
+    expect(res.removedAccounts).toBe(1);
+    expect(res.removedCharacters).toBe(1); // ALT's Neleourg; BUCKWHEET chars came with the account
+
+    // entry.yaml: BUCKWHEET account gone, ALT's stale char gone (ALT account stays, empty)
+    expect(yaml.read()).toEqual([]);
+
+    // gsiv.db: BUCKWHEET removed, ALT kept; no characters remain
+    const list = await store.list();
+    expect(list.accounts.map((a) => a.account_name)).toEqual(["ALT"]);
+    expect(list.characters).toEqual([]);
+
+    // inv.db3 (fake) received the right calls
+    expect(fake.deletedAccounts).toEqual(["BUCKWHEET"]);
+    expect(fake.deletedCharacters).toEqual([{ name: "Neleourg", account: "ALT" }]);
+
     rmSync(dir, { recursive: true, force: true });
   });
 });
