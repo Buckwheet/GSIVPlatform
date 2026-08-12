@@ -112,6 +112,7 @@ as the `pricing` module.
 **Done since this handoff (2026-08-12, cont.):**
 - **your-shops module live** (`/api/modules/your-shops`, page `/your-shops`, dashboard tile, header bell + badge + toasts): tracks the user's shops (seeded Erendiir, Boiler, Jinsem — editable in the UI, `yourshops.read/write`), lists their sales (273 rows, from pricing.db read-only) and alerts on new sales via a `sale_update` WS event. Per-shop baseline: history never spams alerts; adding a shop baselines it silently.
 - **`/lookup` page + Bank tab live (item-search step 1)**: new Lookup page in the operations group (`/lookup`, order 20, shell-owned core item — no new backend module yet); Bank tab renders sortable per-character × town-bank silvers (10 town columns + stored-Total column), per-char account · L{level} {prof} sub-line, grand total footer, character-name + account filters, currency formatting (thousands separators; missing town = –), disabled `launch ▸` per char (wired in step 5); disabled tabs for Resources/Tickets/Items (steps 2–4). `GET /api/modules/inventory/bank` extended with `account`/`prof`/`level` (stored Total row is authoritative for the per-char total; town-sum fallback when a char has no Total row).
+- **/lookup step 4 (Item search) live** (`7c203b2`, PR #41): `GET /api/modules/inventory/search` gains a `filter=` param cloning invdb.lic's query grammar (bare-word name search, `type=`/`location=`/`amount>N`/`!=`/`/regex/`+`!`/`*` wildcards/`|`,` arrays/`limit=`/`orderby=`; case-insensitive regexp registered like invdb; unknown filter/bad regex/extras → 400 with message). Legacy `q`/`character`/`location` still work; rows gain `account`/`loc`/`location_name`/`path`/`registered`/`hidden`/`timestamp`. `/lookup` Items tab enabled: filter-expression input + example chips + grammar hint; results table with loc abbr + full-name tooltip, item/noun + container path, qty/type/stack/status/marked; launch ▸ still disabled (step 5). 300 tests green (24 store grammar tests + 3 route tests added); deployed + verified live on the box (200 with results, 400 on bad filter).
 - **/lookup step 3 (Tickets + Lumnis)** (`ebf02c4`): Tickets tab enabled — Tickets table (per-char source/amount/currency: gold, bloodscrip, ethereal scrip, tickets, soul shards, raikhen, blackscrip) + Lumnis table (status/triple/double/total/start_day/start_time/last_schedule), same character-name + account filters; lazy-loaded. Backend: `GET /api/modules/inventory/tickets` extended with `account`; new `GET /api/modules/inventory/lumnis`. Pending (user, deferred): clean up chars no longer owned (e.g. **Mahres** / Buckwheet) from invdb data + characters.
 - **/lookup step 2 (Resources) + Bank polish** (`77ffb49`): Resources tab enabled on `/lookup` — per-char energy/weekly/total/suffused/favor/bonus with the same character-name + account filters as Bank (lazy-loaded); `GET /api/modules/inventory/resources` extended with `account` (matches `/bank`); Bank tab gains a **Towns column selector** (show/hide any of the 10 town columns, All/None shortcuts).
 - **invdb scan-status diagnostics fixed** (`88c5701`): `GET /api/modules/inventory/scan/status` `running` was always true — bare `pgrep -f invdb-parallel.sh` self-matched its own `sh -c` wrapper (UI showed "● scan running" forever and disabled "Run scan now"). Now uses the `[i]` bracket trick, and the endpoint gains `data_as_of` = newest write timestamp across `character/item/silver/resource/tickets` (ISO) so DB freshness is checkable on every scan.
@@ -132,7 +133,7 @@ as the `pricing` module.
 1. **Bank balances** (first step) — DONE 2026-08-12: interactive per-character/per-bank silvers view with filters on the new `/lookup` page.
 2. **Resources** — DONE 2026-08-12: energy/weekly/total/suffused/favor/bonus per char on the `/lookup` Resources tab.
 3. **Tickets + lumnis** — DONE 2026-08-12: ticket balances + lumnis status on the `/lookup` Tickets tab.
-4. **Item search** — clone invdb's query capability (filters incl. `key>N`/`!=`/`/regex/`, arrays, wildcards, bare-word name search) over inv.db3.
+4. **Item search** — DONE 2026-08-12 (PR #41, `7c203b2`, live): invdb's filter grammar cloned over inv.db3 — bare words (name substring), `type=`/`location=` (name or abbr)/`amount>N`/`level>=N` (character level)/`!=`/`/regex/`+`!`/`*` wildcards/`a|b`+`a,b` arrays/`''` empty/`1,000` ints/`limit=N`/`orderby=-col`; case-insensitive `regexp()` registered like invdb; unknown filter/bad regex → 400. `/lookup` Items tab live: expression input + example chips + grammar hint, results table (character, loc abbr, item/noun+container path, type, qty, stack, status, marked, launch ▸ disabled), inline errors, 500-row cap notice.
 5. **Launch-a-character** — from a search result, start the char's Lich session / open its stream to investigate in-game.
 6. **Unified display** — intelligent dashboard view of everything invdb collects.
 Separate workstream: **scheduler UX redesign** (move off the Inventory page; batch-by-account orchestrator with per-account threads + job status + retries, ~15 accounts).
@@ -144,7 +145,7 @@ Separate workstream: **scheduler UX redesign** (move off the Inventory page; bat
 - **Data:** from `/opt/gs4sd/lich5/data/inv.db3` — `silver` (character_id, bank_id, amount) joined with `character` + static `bank` (10 towns + Total), via the v2 inventory module (`/api/modules/inventory/bank` — extend it if needed: it already returns character/bank/silvers).
 - **UI:** sortable table of per-character × town-bank silvers; per-char total column; grand total; filters (character name, account via characters join); currency formatting; "launch ▸" affordance per char (wired in step 5).
 - **Auto-save:** on sign-off, mark done in this file + memory; fresh session resumes at step 2 (resources).
-- **Status:** implemented + committed (`093c97b`) (see "Done since this handoff (2026-08-12, cont.)" above). Next session resumes at **step 2 (resources)**.
+- **Status:** implemented + committed (`093c97b`). Next session resumes at **step 5 (launch-a-character)**.
 
 **Dev:** gate = `cd backend && npm test && npm run typecheck && npm run lint` + `cd frontend && npm run build`. Run backend (`cd backend && AUTH_TOKENS=... npx tsx src/index.ts`) + frontend (`npm run dev`), paste token in the UI. Kill stale dev servers (:3102/:5173) before redeploying. **Edits to this repo go through bash** (D: path — file tools are confined to the C: workspace). Redeploy recipe + lich module docs: `deploy/V2-DEPLOYMENT.md` (§Lich migration).
 
@@ -152,9 +153,10 @@ Separate workstream: **scheduler UX redesign** (move off the Inventory page; bat
 
 > Continue GSIVPlatform work in `D:\Code Projects\GSIVPlatform` (repo outside the C:\ workspace — all edits
 > through bash; file tools refuse D:). Read docs/STATUS.md §7 first — it has the session log with the full state.
-> Item-search feature on /lookup: steps 1–3 DONE + live (Bank, Resources, Tickets+Lumnis tabs). NEXT = **step 4
-> (item search — clone invdb.lic's query capability over inv.db3: bare-word name search, `type:`/`location:`/
-> `amount>N`/`!=`/`/regex/`/`*` filters)**, then step 5 launch-a-character, step 6 unified display. Testing rule:
+> Item-search feature on /lookup: steps 1–4 DONE + live (Bank, Resources, Tickets+Lumnis, Items tabs — the Items
+> tab uses the invdb filter grammar: bare words, `type=`/`location=`/`amount>N`/`level>N`/`!=`/`/regex/`/
+> `*` wildcards, `a|b` arrays, `limit=`/`orderby=`). NEXT = **step 5 (launch-a-character — from a search result,
+> start the char's Lich session / open its stream to investigate in-game)**, then step 6 unified display. Testing rule:
 > Fisternar/Neleourg only, Amn off-limits. Server: `ssh -i ~/.ssh/id_ed25519 ubuntu@51.68.235.144` (origin IP;
 > the DNS name is Cloudflare-fronted and unreachable) — runbook at top of /opt/gsiv-platform/backend/.env;
 > frontend deploys MUST copy contents into /opt/gsiv-platform/frontend (Caddy root), never dist/; verify the
