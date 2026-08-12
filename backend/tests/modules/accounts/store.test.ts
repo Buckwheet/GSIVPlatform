@@ -1,12 +1,18 @@
+import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { CoreDb } from "../../../src/core/db.js";
 import { EntryYaml } from "../../../src/core/entry-yaml.js";
+import type { InvDbCleaner } from "../../../src/core/inv-db.js";
 import { Ruby } from "../../../src/core/ruby.js";
 import { Sge } from "../../../src/core/sge.js";
 import { AccountsStore } from "../../../src/modules/accounts/store.js";
 
 const FIXTURE = join(import.meta.dirname, "..", "..", "fixtures", "entry-yaml.fixture.yaml");
+const TMP = mkdtempSync(join(tmpdir(), "acct-store-"));
+let storeYamlCounter = 0;
+afterAll(() => rmSync(TMP, { recursive: true, force: true }));
 
 function okRuby(): Ruby {
   return new Ruby(async () => ({ stdout: "PLAINTEXT", stderr: "", code: 0 }));
@@ -46,14 +52,32 @@ function sgeOk(chars: { slot: string; name: string }[]): Sge {
   });
 }
 
+class FakeInvDb implements InvDbCleaner {
+  deletedAccounts: string[] = [];
+  deletedCharacters: { name: string; account: string }[] = [];
+  deleteAccounts(accounts: string[]) {
+    this.deletedAccounts.push(...accounts);
+    return { ok: true, removedCharacters: accounts.length, removedItems: 0 };
+  }
+  deleteCharacters(targets: { name: string; account: string }[]) {
+    this.deletedCharacters.push(...targets);
+    return { ok: true, removedCharacters: targets.length, removedItems: 0 };
+  }
+}
+
 describe("AccountsStore", () => {
-  function makeStore(overrides: { ruby?: Ruby; sge?: Sge; delayMs?: number } = {}) {
+  function makeStore(
+    overrides: { yaml?: EntryYaml; ruby?: Ruby; sge?: Sge; invDb?: InvDbCleaner; delayMs?: number } = {},
+  ) {
     const db = new CoreDb(":memory:");
+    const yamlPath = join(TMP, `entry-${++storeYamlCounter}.yaml`);
+    copyFileSync(FIXTURE, yamlPath);
     const store = new AccountsStore(
       db,
-      new EntryYaml(FIXTURE),
+      overrides.yaml ?? new EntryYaml(yamlPath),
       overrides.ruby ?? okRuby(),
       overrides.sge ?? sgeError(new Error("no network")),
+      overrides.invDb ?? new FakeInvDb(),
       {
         delayMs: overrides.delayMs ?? 0,
       },
@@ -140,5 +164,185 @@ describe("AccountsStore", () => {
     list = await store.list();
     expect(list.accounts).toEqual([]);
     expect(list.characters).toEqual([]);
+  });
+
+  it("upserts per char: keeps stale rows, marks entry_only, preserves last_seen", async () => {
+    let sgeChars = [
+      { slot: "1", name: "Fisternar" },
+      { slot: "2", name: "Zepherus" },
+    ];
+    const sge = new Sge((_h, _p, onData, _onError) => {
+      const fields = sgeChars.flatMap((c) => [c.slot, c.name]);
+      const chunks = ["MASK", "A\tKEY=abc", "M", "N", "G", `C\t1\tGS3\t1\t2\t${fields.join("\t")}`];
+      let i = 0;
+      const deliver = (idx: number) => {
+        if (idx < chunks.length) setImmediate(() => onData(Buffer.from(chunks[idx], "binary")));
+      };
+      deliver(0);
+      return {
+        write: () => {
+          i += 1;
+          deliver(i);
+        },
+        destroy: () => {},
+      };
+    });
+    const { store } = makeStore({ sge });
+    await store.scanOne("BUCKWHEET");
+    const firstList = await store.list();
+    const firstSeen = firstList.characters.find((c) => c.char_name === "Fisternar")?.last_seen;
+    expect(firstSeen).toBeTypeOf("number"); // Fisternar was active on SGE in scan 1
+    // Fisternar vanishes from SGE; entry.yaml still lists it
+    sgeChars = [{ slot: "1", name: "Zepherus" }];
+    await store.scanOne("BUCKWHEET");
+    const list = await store.list();
+    const chars = list.characters.filter((c) => c.account_name === "BUCKWHEET");
+    const fisternar = chars.find((c) => c.char_name === "Fisternar");
+    expect(fisternar?.status).toBe("entry_only");
+    expect(fisternar?.last_seen).toBe(firstSeen); // last_seen preserved, not reset
+    const zepherus = chars.find((c) => c.char_name === "Zepherus");
+    expect(zepherus?.status).toBe("active");
+    expect(zepherus?.last_seen).toBeGreaterThanOrEqual(firstSeen as number);
+    // second scan did NOT delete the row set
+    expect(chars.map((c) => c.char_name).sort()).toEqual(["Fisternar", "Zepherus"]);
+  });
+
+  it("exposes status and auto_added columns on scanned rows", async () => {
+    const { store } = makeStore({ sge: sgeOk([{ slot: "1", name: "Zepherus" }]) });
+    await store.scanOne("BUCKWHEET");
+    const list = await store.list();
+    const zepherus = list.characters.find((c) => c.char_name === "Zepherus");
+    expect(zepherus).toMatchObject({ status: "active", auto_added: 0 });
+    const fisternar = list.characters.find((c) => c.char_name === "Fisternar");
+    expect(fisternar).toMatchObject({ status: "entry_only", auto_added: 0 });
+  });
+
+  it("auto-adds a new SGE char to entry.yaml (auto_added=1)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "acct-auto-"));
+    const yamlPath = join(dir, "entry.yaml");
+    copyFileSync(FIXTURE, yamlPath);
+    const yaml = new EntryYaml(yamlPath);
+    const { store } = makeStore({ yaml, sge: sgeOk([{ slot: "1", name: "Freshchar" }]) });
+    const res = await store.scanOne("BUCKWHEET");
+    expect(res.ok).toBe(true);
+    const yamlChars = yaml.read().map((c) => c.char_name);
+    expect(yamlChars).toContain("Freshchar");
+    const list = await store.list();
+    const fresh = list.characters.find((c) => c.char_name === "Freshchar");
+    expect(fresh?.auto_added).toBe(1);
+    expect(fresh?.status).toBe("active");
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("auto-add failure records the row but does not abort the scan", async () => {
+    class FailingYaml extends EntryYaml {
+      override addCharacter(): never {
+        throw new Error("boom");
+      }
+    }
+    const dir = mkdtempSync(join(tmpdir(), "acct-auto-fail-"));
+    const yamlPath = join(dir, "entry.yaml");
+    copyFileSync(FIXTURE, yamlPath);
+    const yaml = new FailingYaml(yamlPath);
+    const { store } = makeStore({ yaml, sge: sgeOk([{ slot: "1", name: "Freshchar" }]) });
+    const res = await store.scanOne("BUCKWHEET");
+    expect(res.ok).toBe(true);
+    const list = await store.list();
+    const fresh = list.characters.find((c) => c.char_name === "Freshchar");
+    expect(fresh).toBeDefined();
+    expect(fresh?.auto_added).toBe(0);
+    expect(fresh?.status).toBe("active");
+    expect(list.accounts[0].auth_status).toBe("ok");
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("cleanupStale removes dead accounts + stale chars from entry.yaml, gsiv.db, and inv.db3", async () => {
+    const fake = new FakeInvDb();
+    const dir = mkdtempSync(join(tmpdir(), "acct-cleanup-"));
+    const yamlPath = join(dir, "entry.yaml");
+    copyFileSync(FIXTURE, yamlPath);
+    const yaml = new EntryYaml(yamlPath);
+    const { db, store } = makeStore({ yaml, invDb: fake });
+
+    // Seed gsiv.db directly (no scan): BUCKWHEET = dead account; ALT = live with a stale char.
+    const ins = db.get();
+    ins
+      .prepare("INSERT INTO accounts (account_name, auth_status, last_scan) VALUES ('BUCKWHEET','bad_password',1)")
+      .run();
+    ins.prepare("INSERT INTO accounts (account_name, auth_status, last_scan) VALUES ('ALT','ok',1)").run();
+    ins
+      .prepare(
+        "INSERT INTO account_characters (account_name, char_name, status) VALUES ('BUCKWHEET','Fisternar','entry_only')",
+      )
+      .run();
+    ins
+      .prepare(
+        "INSERT INTO account_characters (account_name, char_name, status) VALUES ('BUCKWHEET','Zepherus','entry_only')",
+      )
+      .run();
+    ins
+      .prepare(
+        "INSERT INTO account_characters (account_name, char_name, status) VALUES ('ALT','Neleourg','entry_only')",
+      )
+      .run();
+
+    const res = await store.cleanupStale();
+    expect(res.ok).toBe(true);
+    expect(res.removedAccounts).toBe(1);
+    expect(res.removedCharacters).toBe(1); // ALT's Neleourg; BUCKWHEET chars came with the account
+
+    // entry.yaml: BUCKWHEET account gone, ALT's stale char gone (ALT account stays, empty)
+    expect(yaml.read()).toEqual([]);
+
+    // gsiv.db: BUCKWHEET removed, ALT kept; no characters remain
+    const list = await store.list();
+    expect(list.accounts.map((a) => a.account_name)).toEqual(["ALT"]);
+    expect(list.characters).toEqual([]);
+
+    // inv.db3 (fake) received the right calls
+    expect(fake.deletedAccounts).toEqual(["BUCKWHEET"]);
+    expect(fake.deletedCharacters).toEqual([{ name: "Neleourg", account: "ALT" }]);
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("cleanupStale dryRun previews without mutating", async () => {
+    const fake = new FakeInvDb();
+    const dir = mkdtempSync(join(tmpdir(), "acct-cleanup-dry-"));
+    const yamlPath = join(dir, "entry.yaml");
+    copyFileSync(FIXTURE, yamlPath);
+    const yaml = new EntryYaml(yamlPath);
+    const { db, store } = makeStore({ yaml, invDb: fake });
+
+    const ins = db.get();
+    ins
+      .prepare("INSERT INTO accounts (account_name, auth_status, last_scan) VALUES ('BUCKWHEET','bad_password',1)")
+      .run();
+    ins.prepare("INSERT INTO accounts (account_name, auth_status, last_scan) VALUES ('ALT','ok',1)").run();
+    ins
+      .prepare(
+        "INSERT INTO account_characters (account_name, char_name, status) VALUES ('BUCKWHEET','Fisternar','entry_only')",
+      )
+      .run();
+    ins
+      .prepare(
+        "INSERT INTO account_characters (account_name, char_name, status) VALUES ('ALT','Neleourg','entry_only')",
+      )
+      .run();
+
+    const res = await store.cleanupStale(true);
+    expect(res.dryRun).toBe(true);
+    expect(res.removedAccounts).toBe(1);
+    expect(res.removedCharacters).toBe(1); // ALT's Neleourg (BUCKWHEET's Fisternar belongs to the account)
+
+    // nothing mutated
+    expect(yaml.read().length).toBe(3); // Fisternar, Zepherus (BUCKWHEET) + Neleourg (ALT)
+    const list = await store.list();
+    expect(list.accounts.length).toBe(2);
+    expect(list.characters.length).toBe(2);
+    expect(fake.deletedAccounts).toEqual([]);
+    expect(fake.deletedCharacters).toEqual([]);
+
+    rmSync(dir, { recursive: true, force: true });
   });
 });

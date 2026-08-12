@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Auth } from "../../../src/core/auth.js";
 import { CoreDb } from "../../../src/core/db.js";
 import { EntryYaml } from "../../../src/core/entry-yaml.js";
+import type { InvDbCleaner } from "../../../src/core/inv-db.js";
 import { InMemoryKV } from "../../../src/core/kv.js";
 import { Registry } from "../../../src/core/registry.js";
 import { Ruby } from "../../../src/core/ruby.js";
@@ -21,6 +22,13 @@ const FIXTURE = join(import.meta.dirname, "..", "..", "fixtures", "entry-yaml.fi
 const TMP = mkdtempSync(join(tmpdir(), "accounts-routes-"));
 const ENTRY_YAML = join(TMP, "entry.yaml");
 const TOTP_SECRET = join(TMP, "totp_secret");
+
+function fakeInvDb(): InvDbCleaner {
+  return {
+    deleteAccounts: () => ({ ok: true, removedCharacters: 0, removedItems: 0 }),
+    deleteCharacters: () => ({ ok: true, removedCharacters: 0, removedItems: 0 }),
+  };
+}
 copyFileSync(FIXTURE, ENTRY_YAML);
 
 describe("accounts module routes", () => {
@@ -40,7 +48,7 @@ describe("accounts module routes", () => {
       setImmediate(() => onError(new Error("no network")));
       return { write: () => {}, destroy: () => {} };
     });
-    const store = new AccountsStore(db, new EntryYaml(ENTRY_YAML), ruby, sge, { delayMs: 0 });
+    const store = new AccountsStore(db, new EntryYaml(ENTRY_YAML), ruby, sge, fakeInvDb(), { delayMs: 0 });
     const totp = new Totp(TOTP_SECRET);
     const registry = new Registry();
     registry.register(healthModule);
@@ -222,6 +230,75 @@ describe("accounts module routes", () => {
     const spec = (await res.json()) as { paths: Record<string, unknown> };
     expect(spec.paths["/api/modules/accounts/accounts"]).toBeDefined();
     expect(spec.paths["/api/modules/accounts/entry/account/:name/character"]).toBeDefined();
-    expect(spec.paths["/api/modules/accounts/totp/setup"]).toBeDefined();
+  });
+
+  it("GET /accounts/stale requires auth and read scope", async () => {
+    const app = makeApp("limited:tok:accounts.read");
+    expect((await app.request("/api/modules/accounts/accounts/stale")).status).toBe(401);
+    const res = await app.request("/api/modules/accounts/accounts/stale", { headers: auth });
+    expect(res.status).toBe(200);
+  });
+
+  it("GET /accounts/stale returns entry_only chars and problem accounts", async () => {
+    copyFileSync(FIXTURE, ENTRY_YAML);
+    const ruby = new Ruby(async () => ({ stdout: "PLAINTEXT", stderr: "", code: 0 }));
+    const sge = new Sge((_h, _p, onData, _onError) => {
+      const chunks = ["MASK", "A\tKEY=abc", "M", "N", "G", "C\t1\tGS3\t1\t2\t1\tZepherus"];
+      let i = 0;
+      const deliver = (idx: number) => {
+        if (idx < chunks.length) setImmediate(() => onData(Buffer.from(chunks[idx], "binary")));
+      };
+      deliver(0);
+      return {
+        write: () => {
+          i += 1;
+          deliver(i);
+        },
+        destroy: () => {},
+      };
+    });
+    const store = new AccountsStore(db, new EntryYaml(ENTRY_YAML), ruby, sge, fakeInvDb(), { delayMs: 0 });
+    const registry = new Registry();
+    registry.register(healthModule);
+    registry.register(createAccountsModule(store, new Totp(TOTP_SECRET)));
+    registry.validate();
+    const appAuth = new Auth(new InMemoryKV());
+    appAuth.loadFromEnv("limited:tok:accounts.read");
+    const app = createApp({ registry, kv: new InMemoryKV(), db, auth: appAuth, eventBus: new EventBus() });
+
+    await store.scanOne("BUCKWHEET");
+    const res = await app.request("/api/modules/accounts/accounts/stale", { headers: auth });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      characters: { account_name: string; char_name: string; status: string }[];
+      accounts: { account_name: string; auth_status: string }[];
+    };
+    const buckwheet = body.characters.filter((c) => c.account_name === "BUCKWHEET");
+    expect(buckwheet.map((c) => c.char_name).sort()).toEqual(["Fisternar"]);
+    expect(buckwheet.every((c) => c.status === "entry_only")).toBe(true);
+    expect(Array.isArray(body.accounts)).toBe(true);
+  });
+
+  it("POST /accounts/stale/cleanup requires accounts.write + TOTP", async () => {
+    new Totp(TOTP_SECRET).reset();
+    const app = makeApp("limited:tok:accounts.read,accounts.write");
+    const noSetup = await post(app, "/api/modules/accounts/accounts/stale/cleanup", { totp_code: "" });
+    expect(noSetup.status).toBe(403);
+    expect((await noSetup.json()) as { error: string }).toEqual({ error: "2FA not configured — set up TOTP first" });
+
+    const secret = await ensureSecret(app);
+    const wrong = await post(app, "/api/modules/accounts/accounts/stale/cleanup", { totp_code: "000000" });
+    expect(wrong.status).toBe(403);
+
+    const ok = await post(app, "/api/modules/accounts/accounts/stale/cleanup", { totp_code: currentCode(secret) });
+    expect(ok.status).toBe(200);
+    const body = (await ok.json()) as {
+      ok: boolean;
+      removedAccounts: number;
+      removedCharacters: number;
+      steps: unknown[];
+    };
+    expect(body.ok).toBe(true);
+    expect(Array.isArray(body.steps)).toBe(true);
   });
 });

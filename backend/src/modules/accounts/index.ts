@@ -24,6 +24,8 @@ const characterSchema = z.object({
   race: z.string().nullable().optional(),
   profession: z.string().nullable().optional(),
   last_login: z.string().nullable().optional(),
+  status: z.string(),
+  auto_added: z.number(),
 });
 
 const okSchema = z.object({ ok: z.boolean() });
@@ -39,6 +41,21 @@ const accountsRoute = createRoute({
         },
       },
       description: "scan results",
+    },
+  },
+});
+
+const staleRoute = createRoute({
+  method: "get",
+  path: "/accounts/stale",
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({ characters: z.array(characterSchema), accounts: z.array(accountSchema) }),
+        },
+      },
+      description: "stale characters + problem accounts",
     },
   },
 });
@@ -131,6 +148,7 @@ const entryAccountBody = z.object({ account_name: z.string(), password: z.string
 const entryPasswordBody = z.object({ password: z.string(), totp_code: z.string() });
 const entryCharBody = z.object({ char_name: z.string(), game_code: z.string().optional(), totp_code: z.string() });
 const totpOnlyBody = z.object({ totp_code: z.string() });
+const cleanupBody = z.object({ totp_code: z.string(), dry_run: z.boolean().optional() });
 
 const stepsSchema = z.object({ steps: z.array(z.object({ action: z.string(), result: z.string() })) });
 
@@ -204,6 +222,29 @@ const entryDeleteCharacterRoute = createRoute({
   },
 });
 
+const cleanupStaleRoute = createRoute({
+  method: "post",
+  path: "/accounts/stale/cleanup",
+  request: { body: { content: { "application/json": { schema: cleanupBody } } } },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            ok: z.boolean(),
+            dryRun: z.boolean(),
+            removedAccounts: z.number(),
+            removedCharacters: z.number(),
+            steps: z.array(z.object({ action: z.string(), result: z.string() })),
+          }),
+        },
+      },
+      description: "stale cleanup complete",
+    },
+    403: { description: "TOTP required/invalid" },
+  },
+});
+
 /** v1 TOTP gate: 2FA must be configured and the code valid. */
 function requireTotp(totp: Totp, code?: string): string | null {
   if (!totp.isSetup()) return "2FA not configured — set up TOTP first";
@@ -224,6 +265,8 @@ export function createAccountsModule(store: AccountsStore, totp: Totp): Module {
     routeScopes: {
       "GET /accounts": ["accounts.read"],
       "GET /accounts/scan/status": ["accounts.read"],
+      "GET /accounts/stale": ["accounts.read"],
+      "POST /accounts/stale/cleanup": ["accounts.write"],
       "POST /accounts/scan": ["accounts.write"],
       "POST /accounts/:name/scan": ["accounts.write"],
       "GET /totp/status": ["accounts.read"],
@@ -241,6 +284,7 @@ export function createAccountsModule(store: AccountsStore, totp: Totp): Module {
       const db = (_deps as { db?: CoreDb }).db;
       const eventLog = db ? new EventLog(db) : null;
       router.openapi(accountsRoute, async (c) => c.json(await store.list()));
+      router.openapi(staleRoute, async (c) => c.json(await store.stale()));
       router.openapi(scanStatusRoute, async (c) => c.json({ running: store.scanRunning() }));
       router.openapi(scanAllRoute, async (c) => {
         const res = await store.scanAll();
@@ -313,6 +357,14 @@ export function createAccountsModule(store: AccountsStore, totp: Totp): Module {
         const { steps } = await store.deleteCharacterWithSteps(c.req.valid("param").name, c.req.valid("param").char);
         if (!steps.some((s) => s.result === "ok")) return c.json({ error: "character not found anywhere", steps }, 404);
         return c.json({ ok: true, steps }, 200);
+      });
+
+      router.openapi(cleanupStaleRoute, async (c) => {
+        const { totp_code, dry_run } = c.req.valid("json");
+        const err = requireTotp(totp, totp_code);
+        if (err) return c.json({ error: err }, 403);
+        const res = await store.cleanupStale(Boolean(dry_run));
+        return c.json(res, 200);
       });
     },
   };

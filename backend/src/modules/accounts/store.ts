@@ -1,5 +1,6 @@
 import type { CoreDb } from "../../core/db.js";
 import type { EntryYaml } from "../../core/entry-yaml.js";
+import type { InvDbCleaner } from "../../core/inv-db.js";
 import type { Ruby } from "../../core/ruby.js";
 import type { Sge } from "../../core/sge.js";
 
@@ -30,6 +31,9 @@ export interface ScanCharacterRow {
   race?: string | null;
   profession?: string | null;
   last_login?: string | null;
+  status: string;
+  auto_added: number;
+  last_seen?: number | null;
 }
 
 const MIGRATIONS = [
@@ -54,6 +58,8 @@ const MIGRATIONS = [
     last_seen INTEGER
   )`,
   `CREATE INDEX IF NOT EXISTS idx_acct_chars ON account_characters(account_name)`,
+  `ALTER TABLE account_characters ADD COLUMN status TEXT NOT NULL DEFAULT 'active'`,
+  `ALTER TABLE account_characters ADD COLUMN auto_added INTEGER NOT NULL DEFAULT 0`,
 ];
 
 export class AccountsStore {
@@ -66,6 +72,7 @@ export class AccountsStore {
     private yaml: EntryYaml,
     private ruby: Ruby,
     private sge: Sge,
+    private invDb: InvDbCleaner,
     private opts: { delayMs?: number } = {},
   ) {
     db.migrate("accounts", MIGRATIONS);
@@ -140,6 +147,21 @@ export class AccountsStore {
       const sgeChars = await this.sge.listCharacters(accountName, decrypted.plain, gameCode);
       authStatus = "ok";
       const yamlMap = new Map(chars.map((c) => [c.char_name.toLowerCase(), c]));
+      const autoAdded = new Set<string>();
+      for (const sc of sgeChars) {
+        if (yamlMap.has(sc.name.toLowerCase())) continue;
+        try {
+          const r = this.yaml.addCharacter(accountName, sc.name, gameCode);
+          if (r.ok) {
+            autoAdded.add(sc.name.toLowerCase());
+            console.error(`roster-sync: auto-added ${sc.name} to entry.yaml (${accountName})`);
+          } else {
+            console.error(`roster-sync: auto-add failed for ${sc.name} (${accountName}): ${r.error}`);
+          }
+        } catch (err) {
+          console.error(`roster-sync: auto-add error for ${sc.name} (${accountName}):`, (err as Error).message);
+        }
+      }
       for (const sc of sgeChars) {
         characters.push({
           account_name: accountName,
@@ -147,6 +169,8 @@ export class AccountsStore {
           slot: sc.slot,
           game_code: yamlMap.get(sc.name.toLowerCase())?.game_code ?? gameCode,
           source: "sge",
+          status: "active",
+          auto_added: autoAdded.has(sc.name.toLowerCase()) ? 1 : 0,
         });
       }
       const sgeNames = new Set(sgeChars.map((c) => c.name.toLowerCase()));
@@ -158,6 +182,8 @@ export class AccountsStore {
             slot: null,
             game_code: c.game_code,
             source: "entry_yaml",
+            status: "entry_only",
+            auto_added: 0,
           });
         }
       }
@@ -226,6 +252,92 @@ export class AccountsStore {
     return this.yaml.addCharacter(accountName.toUpperCase(), charName, gameCode || "GS3");
   }
 
+  /** Rows flagged as stale (entry_only) + accounts with auth problems (feed for cleanup). */
+  async stale(): Promise<{ characters: ScanCharacterRow[]; accounts: ScanAccountRow[] }> {
+    const characters = this.db
+      .prepare("SELECT * FROM account_characters WHERE status = 'entry_only' ORDER BY account_name, char_name")
+      .all() as ScanCharacterRow[];
+    const accounts = this.db
+      .prepare(
+        "SELECT * FROM accounts WHERE auth_status IN ('bad_password', 'error', 'decrypt_error') ORDER BY account_name",
+      )
+      .all() as ScanAccountRow[];
+    return { characters, accounts };
+  }
+
+  /**
+   * Drop every flagged account/char from entry.yaml + gsiv.db + inv.db3.
+   * Dead accounts are removed first (taking their chars with them); the
+   * remaining entry_only chars on live accounts are removed individually.
+   * No password decrypt — deletion only needs names. dryRun previews the
+   * exact set without mutating anything (review before the real run).
+   */
+  async cleanupStale(dryRun = false): Promise<{
+    ok: boolean;
+    dryRun: boolean;
+    removedAccounts: number;
+    removedCharacters: number;
+    steps: { action: string; result: string }[];
+  }> {
+    const { accounts, characters } = await this.stale();
+    const steps: { action: string; result: string }[] = [];
+    let removedAccounts = 0;
+    let removedCharacters = 0;
+    const dead = new Set(accounts.map((a) => a.account_name));
+
+    for (const acct of accounts) {
+      const key = acct.account_name;
+      if (dryRun) {
+        removedAccounts += 1;
+        steps.push({
+          action: `Would remove account ${key} (entry.yaml + dashboard DB + inv.db3)`,
+          result: "dry-run",
+        });
+        continue;
+      }
+      const y = this.yaml.deleteAccount(key);
+      steps.push({ action: `Remove ${key} from entry.yaml`, result: y.removed ? "ok" : "not found" });
+      if (y.removed) removedAccounts += 1;
+      await this.deleteAccount(key);
+      steps.push({ action: `Remove ${key} from dashboard DB`, result: "ok" });
+      const inv = this.invDb.deleteAccounts([key]);
+      steps.push({
+        action: `Remove ${key} chars from inv.db3`,
+        result: inv.ok ? `ok (${inv.removedCharacters} chars, ${inv.removedItems} items)` : `error: ${inv.error}`,
+      });
+    }
+
+    for (const ch of characters) {
+      if (dead.has(ch.account_name)) continue; // already removed with the account
+      if (dryRun) {
+        removedCharacters += 1;
+        steps.push({
+          action: `Would remove ${ch.char_name} (${ch.account_name})`,
+          result: "dry-run",
+        });
+        continue;
+      }
+      const y = this.yaml.deleteCharacter(ch.account_name, ch.char_name);
+      steps.push({
+        action: `Remove ${ch.char_name} (${ch.account_name}) from entry.yaml`,
+        result: y.removed ? "ok" : "not found",
+      });
+      if (y.removed) removedCharacters += 1;
+      const dbRemoved = (await this.deleteCharacter(ch.account_name, ch.char_name)) > 0;
+      steps.push({
+        action: `Remove ${ch.char_name} (${ch.account_name}) from dashboard DB`,
+        result: dbRemoved ? "ok" : "not found",
+      });
+      const inv = this.invDb.deleteCharacters([{ name: ch.char_name, account: ch.account_name }]);
+      steps.push({
+        action: `Remove ${ch.char_name} (${ch.account_name}) from inv.db3`,
+        result: inv.ok ? `ok (${inv.removedCharacters} chars, ${inv.removedItems} items)` : `error: ${inv.error}`,
+      });
+    }
+
+    return { ok: true, dryRun, removedAccounts, removedCharacters, steps };
+  }
+
   /** Delete an account: entry.yaml + scan db, with per-step results (v1 steps shape). */
   async deleteAccountWithSteps(name: string): Promise<{ steps: { action: string; result: string }[] }> {
     const key = name.toUpperCase();
@@ -258,6 +370,8 @@ export class AccountsStore {
       slot: null,
       game_code: c.game_code,
       source: "entry_yaml",
+      status: "entry_only",
+      auto_added: 0,
     }));
   }
 
@@ -282,24 +396,28 @@ export class AccountsStore {
          ON CONFLICT(account_name) DO UPDATE SET auth_status=excluded.auth_status, auth_error=excluded.auth_error, last_scan=excluded.last_scan`,
       )
       .run(accountName, authStatus, authError, Date.now());
-    this.db.prepare("DELETE FROM account_characters WHERE account_name = ?").run(accountName);
+    const now = Date.now();
+    const find = this.db.prepare(
+      "SELECT last_seen FROM account_characters WHERE account_name = ? AND LOWER(char_name) = LOWER(?)",
+    );
+    const update = this.db.prepare(
+      `UPDATE account_characters
+       SET slot = ?, game_code = ?, source = ?, status = ?, auto_added = ?,
+           last_seen = COALESCE(?, last_seen)
+       WHERE account_name = ? AND LOWER(char_name) = LOWER(?)`,
+    );
     const insert = this.db.prepare(
-      `INSERT INTO account_characters (account_name, char_name, slot, game_code, source, level, race, profession, last_login, last_seen)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO account_characters (account_name, char_name, slot, game_code, source, status, auto_added, last_seen)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     for (const c of characters) {
-      insert.run(
-        accountName,
-        c.char_name,
-        c.slot,
-        c.game_code,
-        c.source,
-        c.level ?? null,
-        c.race ?? null,
-        c.profession ?? null,
-        c.last_login ?? null,
-        Date.now(),
-      );
+      const status = c.status ?? "active";
+      const lastSeen = status === "active" ? now : null; // entry_only keeps its history
+      if (find.get(accountName, c.char_name)) {
+        update.run(c.slot, c.game_code, c.source, status, c.auto_added ?? 0, lastSeen, accountName, c.char_name);
+      } else {
+        insert.run(accountName, c.char_name, c.slot, c.game_code, c.source, status, c.auto_added ?? 0, lastSeen);
+      }
     }
   }
 }

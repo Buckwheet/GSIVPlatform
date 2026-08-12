@@ -10,6 +10,24 @@ interface AccountRow {
   last_scan: number;
 }
 
+interface StaleChar {
+  account_name: string;
+  char_name: string;
+  status: string;
+  last_seen: number | null;
+}
+
+interface StaleAccount {
+  account_name: string;
+  auth_status: string;
+  auth_error: string | null;
+}
+
+interface StaleReport {
+  characters: StaleChar[];
+  accounts: StaleAccount[];
+}
+
 export default function Accounts({ auth }: { auth: AuthState }) {
   const [accounts, setAccounts] = useState<AccountRow[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -21,18 +39,23 @@ export default function Accounts({ auth }: { auth: AuthState }) {
   const [entryName, setEntryName] = useState("");
   const [entryPass, setEntryPass] = useState("");
   const [scanning, setScanning] = useState(false);
+  const [stale, setStale] = useState<StaleReport | null>(null);
   const [adding, setAdding] = useState(false);
+  const [cleanupCode, setCleanupCode] = useState("");
+  const [cleaning, setCleaning] = useState(false);
   const { addToast } = useToast();
   const write = can(auth, ["accounts.write"]);
 
   async function refresh() {
     try {
-      const [list, totp] = await Promise.all([
+      const [list, totp, staleRes] = await Promise.all([
         api<{ accounts: AccountRow[] }>("/modules/accounts/accounts", auth),
         api<{ setup: boolean }>("/modules/accounts/totp/status", auth),
+        api<StaleReport>("/modules/accounts/accounts/stale", auth),
       ]);
       setAccounts(list.accounts);
       setTotpSetup(totp.setup);
+      setStale(staleRes);
       setError(null);
     } catch (err) {
       setError((err as Error).message);
@@ -116,6 +139,35 @@ export default function Accounts({ auth }: { auth: AuthState }) {
     }
   }
 
+  async function cleanupStale() {
+    if (!cleanupCode) return;
+    setCleaning(true);
+    try {
+      const res = await api<{
+        ok: boolean;
+        removedAccounts: number;
+        removedCharacters: number;
+        steps: { action: string; result: string }[];
+      }>("/modules/accounts/accounts/stale/cleanup", auth, {
+        method: "POST",
+        body: JSON.stringify({ totp_code: cleanupCode }),
+      });
+      setCleanupCode("");
+      addToast({
+        tone: "good",
+        title: "Cleanup Complete",
+        message: `Removed ${res.removedAccounts} account(s) and ${res.removedCharacters} character(s) from entry.yaml, inv.db3 and the dashboard.`,
+      });
+      await refresh();
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : "failed";
+      setError(msg);
+      addToast({ tone: "bad", title: "Cleanup Failed", message: msg });
+    } finally {
+      setCleaning(false);
+    }
+  }
+
   const columns = [
     { key: "account_name", header: "Account", sortable: true },
     {
@@ -194,6 +246,62 @@ export default function Accounts({ auth }: { auth: AuthState }) {
             </div>
           </div>
         </Card>
+      )}
+
+      {stale && (stale.characters.length > 0 || stale.accounts.length > 0) && (
+        <div
+          style={{
+            marginBottom: "var(--space-4)",
+            padding: "var(--space-3)",
+            background: "var(--tint-warn)",
+            border: "1px solid var(--warn)",
+            borderRadius: "var(--radius-sm)",
+            color: "var(--text-strong)",
+          }}
+        >
+          <strong>Roster issues:</strong> {stale.characters.length} stale{" "}
+          {stale.characters.length === 1 ? "character" : "characters"} ·{" "}
+          {stale.accounts.length} {stale.accounts.length === 1 ? "account" : "accounts"} with auth errors
+          <details style={{ marginTop: "var(--space-2)" }}>
+            <summary style={{ cursor: "pointer" }}>Show details</summary>
+            <ul style={{ margin: "var(--space-2) 0 0 0", paddingLeft: "var(--space-4)" }}>
+              {stale.characters.map((c) => (
+                <li key={`c-${c.account_name}-${c.char_name}`}>
+                  <code>{c.char_name}</code> · {c.account_name}
+                  {c.last_seen ? ` · last seen ${new Date(c.last_seen).toLocaleString()}` : " · never seen active"}
+                </li>
+              ))}
+              {stale.accounts.map((a) => (
+                <li key={`a-${a.account_name}`}>
+                  <code>{a.account_name}</code> · {a.auth_status}
+                  {a.auth_error ? ` (${a.auth_error.slice(0, 60)})` : ""}
+                </li>
+              ))}
+            </ul>
+          </details>
+          {write && totpSetup && (
+            <div style={{ marginTop: "var(--space-2)", display: "flex", gap: "var(--space-2)", alignItems: "flex-end" }}>
+              <div style={{ flex: "0 0 150px" }}>
+                <Input
+                  id="cleanupTotp"
+                  label="TOTP code"
+                  value={cleanupCode}
+                  onChange={setCleanupCode}
+                  placeholder="000000"
+                />
+              </div>
+              <Button
+                variant="primary"
+                onClick={cleanupStale}
+                disabled={!cleanupCode || cleaning}
+                loading={cleaning}
+                ariaLabel="Clean up stale accounts and characters"
+              >
+                Clean up stale
+              </Button>
+            </div>
+          )}
+        </div>
       )}
 
       <Table
