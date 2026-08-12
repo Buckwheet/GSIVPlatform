@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { InventoryDbError, InventoryStore } from "../../../src/modules/inventory/store.js";
+import { InventoryDbError, InventoryStore, SearchSyntaxError } from "../../../src/modules/inventory/store.js";
 import { buildInvFixture } from "../../fixtures/inv-fixture.js";
 
 describe("InventoryStore", () => {
@@ -34,7 +34,7 @@ describe("InventoryStore", () => {
     const store = makeStore();
     const s = store.summary();
     expect(s.characters).toBe(2);
-    expect(s.items).toBe(5);
+    expect(s.items).toBe(6);
     expect(s.totalSilver).toBe(134999);
   });
 
@@ -109,6 +109,110 @@ describe("InventoryStore", () => {
     expect(lum.length).toBe(2);
     expect(lum[0]).toMatchObject({ character: "Fisternar", account: "main", status: "restart", total: 21900 });
     expect(lum[1]).toMatchObject({ character: "Neleourg", last_schedule: "2023-02-26 13:47:32" });
+  });
+
+  it("bare words search item names (substring)", () => {
+    const store = makeStore();
+    const hits = store.searchFilter("sapphire");
+    expect(hits.map((h) => h.item as string)).toEqual(["sapphire"]);
+  });
+
+  it("type= matches comma-joined multi-types via %wrap%", () => {
+    const store = makeStore();
+    const hits = store.searchFilter("type=gem");
+    expect(hits.map((h) => h.item as string).sort()).toEqual(["sapphire", "sunstone", "topaz"]);
+  });
+
+  it("numeric comparisons (amount>N, level>N on characters)", () => {
+    const store = makeStore();
+    expect(store.searchFilter("amount>2").map((h) => h.item as string)).toEqual(["sapphire"]);
+    // level is the CHARACTER's level (invdb filter map: level -> c.level)
+    expect(
+      store
+        .searchFilter("level>90")
+        .map((h) => h.item as string)
+        .sort(),
+    ).toEqual(["claidhmore", "crimson armor", "sapphire", "sunstone"]);
+  });
+
+  it("!= on strings is NOT LIKE (invdb semantics: only exact matches excluded)", () => {
+    const store = makeStore();
+    const items = store
+      .searchFilter("type!=gem")
+      .map((h) => h.item as string)
+      .sort();
+    expect(items).toEqual(["claidhmore", "crimson armor", "mace", "sunstone"]);
+  });
+
+  it("location= matches name or abbr, case-insensitively", () => {
+    const store = makeStore();
+    expect(store.searchFilter("location=inv").length).toBe(3);
+    expect(store.searchFilter("location=INV").length).toBe(3);
+  });
+
+  it("regex filters match case-insensitively", () => {
+    const store = makeStore();
+    expect(store.searchFilter("/^SAP/").map((h) => h.item as string)).toEqual(["sapphire"]);
+    const neg = store
+      .searchFilter("name!=/^cla/")
+      .map((h) => h.item as string)
+      .sort();
+    expect(neg).toEqual(["crimson armor", "mace", "sapphire", "sunstone", "topaz"]);
+  });
+
+  it("arrays become IN (...) with exact matching", () => {
+    const store = makeStore();
+    // exact IN: sunstone's 'gem,realm:reim' does not match 'gem'
+    expect(store.searchFilter("type=gem|weapon").length).toBe(4);
+    expect(store.searchFilter("type=gem,weapon").length).toBe(4);
+  });
+
+  it("* wildcard becomes %", () => {
+    const store = makeStore();
+    expect(store.searchFilter("search=sap*re").map((h) => h.item as string)).toEqual(["sapphire"]);
+  });
+
+  it("status matches as a prefix", () => {
+    const store = makeStore();
+    expect(store.searchFilter("status=par").map((h) => h.item as string)).toEqual(["claidhmore"]);
+  });
+
+  it("character/account filters", () => {
+    const store = makeStore();
+    expect(store.searchFilter("character=Neleourg").length).toBe(2);
+    expect(store.searchFilter("account=main").length).toBe(6);
+  });
+
+  it("limit and orderby extras", () => {
+    const store = makeStore();
+    expect(store.searchFilter("limit=2").length).toBe(2);
+    expect(store.searchFilter("orderby=-amount limit=3").map((h) => h.amount as number)).toEqual([3, 2, 1]);
+  });
+
+  it("search results expose invdb columns", () => {
+    const store = makeStore();
+    const hit = store.searchFilter("sapphire")[0] as Record<string, unknown>;
+    expect(hit).toMatchObject({
+      character: "Fisternar",
+      account: "main",
+      prof: "warrior",
+      level: 100,
+      loc: "CTN",
+      location: "container",
+      location_name: "container",
+      type: "gem",
+      amount: 3,
+      noun: "sapphire",
+      timestamp: 1786000000,
+    });
+  });
+
+  it("rejects unknown filters, bad regexes, bad extras with SearchSyntaxError", () => {
+    const store = makeStore();
+    expect(() => store.searchFilter("bogus=1")).toThrow(SearchSyntaxError);
+    expect(() => store.searchFilter("/[unclosed/")).toThrow(SearchSyntaxError);
+    expect(() => store.searchFilter("limit=abc")).toThrow(SearchSyntaxError);
+    expect(() => store.searchFilter("energy=5")).toThrow(SearchSyntaxError);
   });
 
   it("throws InventoryDbError on missing db", () => {

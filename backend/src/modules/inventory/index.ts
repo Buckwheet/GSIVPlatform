@@ -3,7 +3,7 @@ import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createRoute, type OpenAPIHono, z } from "@hono/zod-openapi";
 import type { Module } from "../../core/types.js";
-import type { InventoryStore } from "./store.js";
+import { type InventoryStore, SearchSyntaxError } from "./store.js";
 
 const charSchema = z.object({
   id: z.number(),
@@ -24,9 +24,13 @@ const charSchema = z.object({
 
 const searchRowSchema = z.object({
   character: z.string(),
+  account: z.string(),
   prof: z.string(),
   level: z.number(),
+  loc: z.string(),
   location: z.string(),
+  location_name: z.string(),
+  path: z.string(),
   item: z.string(),
   noun: z.string(),
   type: z.string(),
@@ -34,7 +38,10 @@ const searchRowSchema = z.object({
   stack: z.string(),
   status: z.string(),
   marked: z.string(),
+  registered: z.string(),
   worn: z.string(),
+  hidden: z.string(),
+  timestamp: z.number(),
 });
 
 const resourceRowSchema = z.object({
@@ -135,10 +142,12 @@ const routes = {
         q: z.string().optional(),
         character: z.string().optional(),
         location: z.string().optional(),
+        filter: z.string().optional(),
       }),
     },
     responses: {
       200: { content: { "application/json": { schema: z.array(searchRowSchema) } }, description: "Search results" },
+      400: { description: "Invalid filter expression (see error message)" },
     },
   }),
   resources: createRoute({
@@ -367,8 +376,16 @@ export function createInventoryModule(store: InventoryStore, options: InventoryM
         ),
       );
       router.openapi(routes.search, (c) => {
-        const { q, character, location } = c.req.valid("query");
-        return c.json(store.search(q || "", character, location) as unknown as Array<z.infer<typeof searchRowSchema>>);
+        const { q, character, location, filter } = c.req.valid("query");
+        try {
+          const rows = filter !== undefined ? store.searchFilter(filter) : store.search(q || "", character, location);
+          return c.json(rows as unknown as Array<z.infer<typeof searchRowSchema>>);
+        } catch (err) {
+          if (err instanceof SearchSyntaxError) {
+            return c.json({ error: err.message }, 400);
+          }
+          throw err;
+        }
       });
       router.openapi(routes.resources, (c) =>
         c.json(store.resources() as unknown as Array<z.infer<typeof resourceRowSchema>>),
@@ -402,7 +419,7 @@ export function createInventoryModule(store: InventoryStore, options: InventoryM
         try {
           exec(`sudo nohup bash ${SCAN_SCRIPT} 5 > /tmp/invdb-scan-all.log 2>&1 &`);
           return c.json({ ok: true, started: true });
-        } catch (e) {
+        } catch (_e) {
           return c.json({ ok: false, started: false }, 500);
         }
       });

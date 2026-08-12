@@ -60,6 +60,28 @@ interface ResourceRow {
   bonus: number;
 }
 
+interface ItemRow {
+  character: string;
+  account: string;
+  prof: string;
+  level: number;
+  loc: string;
+  location: string;
+  location_name: string;
+  path: string;
+  item: string;
+  noun: string;
+  type: string;
+  amount: number;
+  stack: string;
+  status: string;
+  marked: string;
+  registered: string;
+  worn: string;
+  hidden: string;
+  timestamp: number;
+}
+
 /** Short header labels for the 10 town banks (full name on hover). */
 const TOWN_LABELS: Record<string, string> = {
   "First Elanith Secured Bank": "First Elanith",
@@ -74,10 +96,22 @@ const TOWN_LABELS: Record<string, string> = {
   "Kraken's Fall Bank": "Kraken's Fall",
 };
 
+/** One-click invdb filter expression starters for the Items tab. */
+const ITEM_EXAMPLES = [
+  "type=gem",
+  "type=weapon",
+  "status=empty",
+  "amount>1",
+  "location=locker",
+  "marked=Y",
+  "/duskruin/",
+  "type=gem amount>5",
+];
+
 const fmt = (n: number) => n.toLocaleString("en-US");
 
 export default function Lookup({ auth }: { auth: AuthState }) {
-  const [activeTab, setActiveTab] = useState<"bank" | "resources" | "tickets">("bank");
+  const [activeTab, setActiveTab] = useState<"bank" | "resources" | "tickets" | "items">("bank");
   const [rows, setRows] = useState<BankRow[]>([]);
   const [resRows, setResRows] = useState<ResourceRow[]>([]);
   const [resLoaded, setResLoaded] = useState(false);
@@ -85,6 +119,11 @@ export default function Lookup({ auth }: { auth: AuthState }) {
   const [lumRows, setLumRows] = useState<LumnisRow[]>([]);
   const [tktLoaded, setTktLoaded] = useState(false);
   const [loadingTkt, setLoadingTkt] = useState(false);
+  const [itemRows, setItemRows] = useState<ItemRow[]>([]);
+  const [itemLoaded, setItemLoaded] = useState(false);
+  const [itemLoading, setItemLoading] = useState(false);
+  const [itemError, setItemError] = useState<string | null>(null);
+  const [expr, setExpr] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingRes, setLoadingRes] = useState(false);
@@ -152,6 +191,33 @@ export default function Lookup({ auth }: { auth: AuthState }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, resLoaded, auth]);
 
+  // Items: lazy-load once on tab activation (empty expression = browse everything),
+  // then re-run on every explicit search.
+  useEffect(() => {
+    if (activeTab !== "items" || itemLoaded) return;
+    runItemSearch("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, itemLoaded, auth]);
+
+  async function runItemSearch(expression: string) {
+    setItemLoading(true);
+    setItemError(null);
+    try {
+      const filter = expression.trim();
+      const path = `/modules/inventory/search${filter ? `?filter=${encodeURIComponent(filter)}` : ""}`;
+      const results = await api<ItemRow[]>(path, auth);
+      setItemRows(results);
+      setError(null);
+    } catch (err) {
+      const msg = (err as Error).message;
+      setItemError(msg);
+      addToast({ tone: "bad", title: "Item Search Failed", message: msg });
+    } finally {
+      setItemLoading(false);
+      setItemLoaded(true);
+    }
+  }
+
   const { towns, displayRows } = useMemo(() => {
     const towns: string[] = [];
     const byChar = new Map<
@@ -186,8 +252,9 @@ export default function Lookup({ auth }: { auth: AuthState }) {
     for (const r of resRows) s.add(r.account);
     for (const r of tktRows) s.add(r.account);
     for (const r of lumRows) s.add(r.account);
+    for (const r of itemRows) s.add(r.account);
     return [...s].sort();
-  }, [displayRows, resRows]);
+  }, [displayRows, resRows, itemRows]);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -224,6 +291,15 @@ export default function Lookup({ auth }: { auth: AuthState }) {
         (account === "all" || r.account === account),
     );
   }, [lumRows, q, account]);
+
+  const filteredItems = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return itemRows.filter(
+      (r) =>
+        (needle === "" || r.character.toLowerCase().includes(needle)) &&
+        (account === "all" || r.account === account),
+    );
+  }, [itemRows, q, account]);
 
   const grandTotal = filtered.reduce((s, r) => s + r.total, 0);
 
@@ -332,12 +408,56 @@ export default function Lookup({ auth }: { auth: AuthState }) {
     [],
   );
 
+  const itemColumns = useMemo<Column<ItemRow>[]>(
+    () => [
+      { key: "character", header: "Character", sortable: true, render: charCol },
+      {
+        key: "loc",
+        header: "Location",
+        sortable: true,
+        render: (r) => (
+          <span title={`${r.location_name}${r.path ? ` — inside ${r.path}` : ""}`}>{r.loc || "–"}</span>
+        ),
+      },
+      {
+        key: "item",
+        header: "Item",
+        sortable: true,
+        render: (r) => (
+          <div>
+            <div>{r.item}</div>
+            <div className="muted" style={{ fontSize: "0.85em" }}>
+              {r.noun || "–"}
+              {r.path ? ` · in ${r.path}` : ""}
+            </div>
+          </div>
+        ),
+      },
+      { key: "type", header: "Type", sortable: true },
+      { key: "amount", header: "Qty", sortable: true, align: "right", render: (r) => fmt(r.amount) },
+      { key: "stack", header: "Stack", sortable: true, render: (r) => r.stack || "–" },
+      { key: "status", header: "Status", sortable: true, render: (r) => r.status || "–" },
+      { key: "marked", header: "Marked", sortable: true, render: (r) => r.marked || "–" },
+      {
+        key: "launch",
+        header: "",
+        align: "right",
+        render: (r) => (
+          <Button disabled title="Wired in step 5 (launch-a-character)" ariaLabel={`Launch ${r.character}`}>
+            launch ▸
+          </Button>
+        ),
+      },
+    ],
+    [],
+  );
+
   return (
     <div>
       <header className="page-header" style={{ flexDirection: "column" }}>
         <h1 className="page-header-title">Lookup</h1>
         <p className="muted" style={{ margin: "var(--space-1) 0 0 0" }}>
-          Interactive view of everything invdb collects — bank balances, resources, then tickets, items.
+          Interactive view of everything invdb collects — bank balances, resources, tickets, items.
         </p>
       </header>
 
@@ -346,14 +466,14 @@ export default function Lookup({ auth }: { auth: AuthState }) {
           { id: "bank", label: "Bank" },
           { id: "resources", label: "Resources" },
           { id: "tickets", label: "Tickets" },
-          { id: "items", label: "Items", disabled: true },
+          { id: "items", label: "Items" },
         ]}
         activeId={activeTab}
-        onChange={(id) => setActiveTab(id as "bank" | "resources" | "tickets")}
+        onChange={(id) => setActiveTab(id as "bank" | "resources" | "tickets" | "items")}
         ariaLabel="Lookup sections"
       />
       <p className="muted" style={{ margin: "var(--space-2) 0 var(--space-4) 0" }}>
-        Items arrive in step 4; launch ▸ is wired in step 5.
+        launch ▸ is wired in step 5 (launch-a-character).
       </p>
 
       <div className="toolbar" style={{ maxWidth: "640px", marginBottom: "var(--space-4)" }}>
@@ -400,6 +520,53 @@ export default function Lookup({ auth }: { auth: AuthState }) {
         </div>
       )}
 
+      {activeTab === "items" && (
+        <div style={{ maxWidth: "960px", marginBottom: "var(--space-4)" }}>
+          <div className="toolbar">
+            <Input
+              id="lookupItemsExpr"
+              label="invdb filter expression"
+              placeholder="e.g. sword  type=weapon  amount>1  location=locker  status!=empty  /duskruin/"
+              value={expr}
+              onChange={setExpr}
+              className="search-input"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void runItemSearch(expr);
+              }}
+            />
+            <Button onClick={() => void runItemSearch(expr)} loading={itemLoading} ariaLabel="Run item search">
+              Search
+            </Button>
+          </div>
+          <div className="toolbar" style={{ flexWrap: "wrap", marginTop: "var(--space-2)", rowGap: "var(--space-2)" }}>
+            <span className="muted" style={{ marginRight: "var(--space-2)" }}>
+              Examples:
+            </span>
+            {ITEM_EXAMPLES.map((ex) => (
+              <Button
+                key={ex}
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setExpr(ex);
+                  void runItemSearch(ex);
+                }}
+                ariaLabel={`Search ${ex}`}
+                title={ex}
+              >
+                {ex}
+              </Button>
+            ))}
+          </div>
+          <p className="muted" style={{ margin: "var(--space-2) 0 0 0", fontSize: "0.9em" }}>
+            Bare words match item names. Filters: <code>type=gem</code> <code>location=inv|locker</code>{" "}
+            <code>amount&gt;2</code> <code>level&gt;90</code> <code>status!=empty</code> <code>marked=Y</code>{" "}
+            <code>name=/regex/i</code> <code>*</code> wildcards, <code>|</code>/<code>,</code> arrays,{" "}
+            <code>limit=N</code>, <code>orderby=-amount</code>.
+          </p>
+        </div>
+      )}
+
       {error && (
         <div
           style={{
@@ -442,6 +609,35 @@ export default function Lookup({ auth }: { auth: AuthState }) {
           />
           <p className="muted" style={{ marginTop: "var(--space-3)", textAlign: "right" }}>
             {filteredRes.length} {filteredRes.length === 1 ? "character" : "characters"} have resource data
+          </p>
+        </>
+      ) : activeTab === "items" ? (
+        <>
+          {itemError && (
+            <div
+              style={{
+                marginBottom: "var(--space-4)",
+                padding: "var(--space-3)",
+                background: "var(--tint-bad)",
+                border: "1px solid var(--bad)",
+                borderRadius: "var(--radius-sm)",
+                color: "var(--text-strong)",
+              }}
+            >
+              <strong>Search error:</strong> {itemError}
+            </div>
+          )}
+          <Table
+            columns={itemColumns}
+            rows={filteredItems}
+            rowKey={(r) => `${r.character}-${r.item}-${r.loc}-${r.path}-${r.timestamp}`}
+            ariaLabel="Item search results"
+            loading={itemLoading}
+            emptyState="No items match — try fewer or different filters."
+          />
+          <p className="muted" style={{ marginTop: "var(--space-3)", textAlign: "right" }}>
+            {filteredItems.length} {filteredItems.length === 1 ? "result" : "results"}
+            {filteredItems.length === 500 ? " · showing the first 500 — narrow your search with filters" : ""}
           </p>
         </>
       ) : (

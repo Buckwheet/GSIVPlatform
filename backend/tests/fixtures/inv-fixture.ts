@@ -79,11 +79,12 @@ export function buildInvFixture(): Database.Database {
   const insItem = db.prepare(
     "INSERT INTO item (character_id, location_id, level, path, type, name, noun, amount, stack, status, marked, registered, worn, hidden, timestamp) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
   );
-  insItem.run(1, 1, 100, "", "weapon", "claidhmore", "claidhmore", 1, "", "", "", "", "", "", 1786000000);
+  insItem.run(1, 1, 100, "", "weapon", "claidhmore", "claidhmore", 1, "", "partial", "", "", "", "", 1786000000);
   insItem.run(1, 2, 100, "", "armor", "crimson armor", "armor", 1, "", "", "", "", "worn", "", 1786000000);
   insItem.run(1, 3, 80, "", "gem", "sapphire", "sapphire", 3, "", "", "", "", "", "", 1786000000);
   insItem.run(2, 1, 88, "", "weapon", "mace", "mace", 1, "", "", "", "", "", "", 1786000100);
   insItem.run(2, 1, 88, "", "gem", "topaz", "topaz", 2, "", "", "", "", "", "", 1786000100);
+  insItem.run(1, 3, 80, "", "gem,realm:reim", "sunstone", "sunstone", 1, "", "", "", "", "", "", 1786000000);
 
   const insTkt = db.prepare(
     "INSERT INTO tickets (character_id, source, amount, currency, timestamp) VALUES (?,?,?,?,?)",
