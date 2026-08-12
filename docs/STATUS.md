@@ -124,4 +124,15 @@ as the `pricing` module.
 - **Inventory scheduler deployed** (`b4956c5`): `/api/modules/inventory/{time,schedule,scan/start,scan/status}` + `gsiv-invdb-scan.timer` (daily 03:00 UTC default). **User feedback (pending): scheduler is NOT user-friendly and should NOT live on the Inventory/items page; batch-add by account (15 accounts → threads) needs a better orchestrator.** Redesign is an open item.
 - **NEXT FEATURE (user-approved direction, brainstorming started):** clone invdb's query/collection capability into an **interactive item-search** experience — search everything invdb collects, launch a character when a found item looks like the target (so we can look for it in-game), intelligent display of ALL collected data. Deliver stepwise, user signs off per step: **step 1 = bank balances**, then resources, etc. Auto-save progress at each sign-off so a fresh session can resume.
 
+**Item-search feature — stepwise plan (user signs off each step; progress auto-saved after each):**
+1. **Bank balances** (first step) — interactive per-character/per-bank silvers view with filters.
+2. **Resources** — energy/weekly/total/suffused/favor/bonus per char.
+3. **Tickets + lumnis** — ticket balances + lumnis status.
+4. **Item search** — clone invdb's query capability (filters incl. `key>N`/`!=`/`/regex/`, arrays, wildcards, bare-word name search) over inv.db3.
+5. **Launch-a-character** — from a search result, start the char's Lich session / open its stream to investigate in-game.
+6. **Unified display** — intelligent dashboard view of everything invdb collects.
+Separate workstream: **scheduler UX redesign** (move off the Inventory page; batch-by-account orchestrator with per-account threads + job status + retries, ~15 accounts).
+
+**Patch-vs-build context (2026-08-12):** the *collection* must run inside a logged-in Lich session (game only reveals inventory to the client) — that's why invdb.lic gets patched for the headless server env (Ruby 4.0.6 gem shadowing, inv.db3 NOT NULL schema, scan timing). The *query/display* layer is dashboard-native (inv.db3 is already read by the v2 inventory module) — that part is built, not patched.
+
 **Dev:** gate = `cd backend && npm test && npm run typecheck && npm run lint` + `cd frontend && npm run build`. Run backend (`cd backend && AUTH_TOKENS=... npx tsx src/index.ts`) + frontend (`npm run dev`), paste token in the UI. Kill stale dev servers (:3102/:5173) before redeploying. **Edits to this repo go through bash** (D: path — file tools are confined to the C: workspace). Redeploy recipe + lich module docs: `deploy/V2-DEPLOYMENT.md` (§Lich migration).
