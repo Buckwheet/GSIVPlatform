@@ -97,6 +97,7 @@ registry.register(
     streamDomain: process.env.VELLUM_STREAM_DOMAIN,
     streams: process.env.VELLUM_STREAMS,
     token: process.env.VELLUM_TOKEN,
+    systemd: new Systemd(),
   }),
 );
 const accountsStore = new AccountsStore(db, new EntryYaml(), new Ruby(), new Sge());
