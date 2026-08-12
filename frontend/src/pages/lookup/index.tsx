@@ -82,6 +82,11 @@ interface ItemRow {
   timestamp: number;
 }
 
+/** Per-char VellumFE stream links from the gameview module (scope gameview.read). */
+interface StreamMap {
+  [char: string]: { url: string; up: boolean };
+}
+
 /** Short header labels for the 10 town banks (full name on hover). */
 const TOWN_LABELS: Record<string, string> = {
   "First Elanith Secured Bank": "First Elanith",
@@ -130,6 +135,7 @@ export default function Lookup({ auth }: { auth: AuthState }) {
   const [q, setQ] = useState("");
   const [account, setAccount] = useState("all");
   const [hiddenTowns, setHiddenTowns] = useState<string[]>([]);
+  const [streams, setStreams] = useState<StreamMap>({});
   const { addToast } = useToast();
 
   useEffect(() => {
@@ -145,6 +151,15 @@ export default function Lookup({ auth }: { auth: AuthState }) {
         setLoading(false);
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth]);
+
+  useEffect(() => {
+    // Stream links come from the gameview module (needs gameview.read). Without
+    // the scope, launch ▸ stays disabled — the rest of the page still works.
+    api<StreamMap>("/modules/gameview/streams", auth)
+      .then(setStreams)
+      .catch(() => setStreams({}));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auth]);
 
@@ -216,6 +231,32 @@ export default function Lookup({ auth }: { auth: AuthState }) {
       setItemLoading(false);
       setItemLoaded(true);
     }
+  }
+
+  /** launch ▸ — open the char’s live stream when one is online; explain otherwise. */
+  function renderLaunch(character: string) {
+    const s = streams[character];
+    if (s?.up) {
+      return (
+        <a
+          className="gs-btn gs-btn--ghost gs-btn--sm"
+          href={s.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={`Open live stream for ${character}`}
+        >
+          launch ▸
+        </a>
+      );
+    }
+    const title = s
+      ? `${character} stream is offline`
+      : `No stream for ${character} — add one per deploy/V2-DEPLOYMENT.md §VellumFE`;
+    return (
+      <Button disabled title={title} ariaLabel={`Launch ${character}`}>
+        launch ▸
+      </Button>
+    );
   }
 
   const { towns, displayRows } = useMemo(() => {
@@ -340,15 +381,11 @@ export default function Lookup({ auth }: { auth: AuthState }) {
         key: "launch",
         header: "",
         align: "right",
-        render: (r) => (
-          <Button disabled title="Wired in step 5 (launch-a-character)" ariaLabel={`Launch ${r.character}`}>
-            launch ▸
-          </Button>
-        ),
+        render: (r) => renderLaunch(r.character),
       },
     ];
     return cols;
-  }, [towns, hiddenTowns]);
+  }, [towns, hiddenTowns, streams]);
 
   const charCol = (r: { account: string; character: string; level: number; prof: string }) => (
     <div>
@@ -442,14 +479,10 @@ export default function Lookup({ auth }: { auth: AuthState }) {
         key: "launch",
         header: "",
         align: "right",
-        render: (r) => (
-          <Button disabled title="Wired in step 5 (launch-a-character)" ariaLabel={`Launch ${r.character}`}>
-            launch ▸
-          </Button>
-        ),
+        render: (r) => renderLaunch(r.character),
       },
     ],
-    [],
+    [streams],
   );
 
   return (
@@ -473,7 +506,7 @@ export default function Lookup({ auth }: { auth: AuthState }) {
         ariaLabel="Lookup sections"
       />
       <p className="muted" style={{ margin: "var(--space-2) 0 var(--space-4) 0" }}>
-        launch ▸ is wired in step 5 (launch-a-character).
+        launch ▸ opens the character’s live stream in a new tab when one is online (currently Fisternar, Neleourg).
       </p>
 
       <div className="toolbar" style={{ maxWidth: "640px", marginBottom: "var(--space-4)" }}>
