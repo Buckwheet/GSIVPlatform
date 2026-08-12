@@ -103,6 +103,23 @@ describe("inventory module routes", () => {
     expect(body[0]).toMatchObject({ character: "Fisternar", account: "main" });
   });
 
+  it("returns tickets with account", async () => {
+    const app = makeApp("limited:tok:inventory.read");
+    const res = await app.request("/api/modules/inventory/tickets", { headers: { Authorization: "Bearer tok" } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { character: string; account: string; source: string }[];
+    expect(body).toMatchObject([{ character: "Fisternar", account: "main", source: "quest" }]);
+  });
+
+  it("returns lumnis status", async () => {
+    const app = makeApp("limited:tok:inventory.read");
+    const res = await app.request("/api/modules/inventory/lumnis", { headers: { Authorization: "Bearer tok" } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { character: string; status: string; total: number }[];
+    expect(body.length).toBe(2);
+    expect(body[0]).toMatchObject({ character: "Fisternar", status: "restart", total: 21900 });
+  });
+
   it("exposes inventory routes in the OpenAPI spec", async () => {
     const app = makeApp("admin:tok:*");
     const res = await app.request("/api/spec", { headers: { Authorization: "Bearer tok" } });

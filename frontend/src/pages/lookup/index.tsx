@@ -23,6 +23,30 @@ interface DisplayRow {
   [town: string]: string | number;
 }
 
+interface TicketRow {
+  character: string;
+  account: string;
+  prof: string;
+  level: number;
+  source: string;
+  amount: number;
+  currency: string;
+}
+
+interface LumnisRow {
+  character: string;
+  account: string;
+  prof: string;
+  level: number;
+  status: string;
+  triple: number;
+  double: number;
+  total: number;
+  start_day: string;
+  start_time: string;
+  last_schedule: string;
+}
+
 interface ResourceRow {
   character: string;
   account: string;
@@ -53,10 +77,14 @@ const TOWN_LABELS: Record<string, string> = {
 const fmt = (n: number) => n.toLocaleString("en-US");
 
 export default function Lookup({ auth }: { auth: AuthState }) {
-  const [activeTab, setActiveTab] = useState<"bank" | "resources">("bank");
+  const [activeTab, setActiveTab] = useState<"bank" | "resources" | "tickets">("bank");
   const [rows, setRows] = useState<BankRow[]>([]);
   const [resRows, setResRows] = useState<ResourceRow[]>([]);
   const [resLoaded, setResLoaded] = useState(false);
+  const [tktRows, setTktRows] = useState<TicketRow[]>([]);
+  const [lumRows, setLumRows] = useState<LumnisRow[]>([]);
+  const [tktLoaded, setTktLoaded] = useState(false);
+  const [loadingTkt, setLoadingTkt] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingRes, setLoadingRes] = useState(false);
@@ -80,6 +108,30 @@ export default function Lookup({ auth }: { auth: AuthState }) {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auth]);
+
+  useEffect(() => {
+    if (activeTab !== "tickets" || tktLoaded) return;
+    (async () => {
+      setLoadingTkt(true);
+      try {
+        const [t, l] = await Promise.all([
+          api<TicketRow[]>("/modules/inventory/tickets", auth),
+          api<LumnisRow[]>("/modules/inventory/lumnis", auth),
+        ]);
+        setTktRows(t);
+        setLumRows(l);
+        setError(null);
+      } catch (err) {
+        const msg = (err as Error).message;
+        setError(msg);
+        addToast({ tone: "bad", title: "Tickets Data Failed", message: msg });
+      } finally {
+        setTktLoaded(true);
+        setLoadingTkt(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, tktLoaded, auth]);
 
   useEffect(() => {
     if (activeTab !== "resources" || resLoaded) return;
@@ -132,6 +184,8 @@ export default function Lookup({ auth }: { auth: AuthState }) {
     const s = new Set<string>();
     for (const r of displayRows) s.add(r.account);
     for (const r of resRows) s.add(r.account);
+    for (const r of tktRows) s.add(r.account);
+    for (const r of lumRows) s.add(r.account);
     return [...s].sort();
   }, [displayRows, resRows]);
 
@@ -152,6 +206,24 @@ export default function Lookup({ auth }: { auth: AuthState }) {
         (account === "all" || r.account === account),
     );
   }, [resRows, q, account]);
+
+  const filteredTkt = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return tktRows.filter(
+      (r) =>
+        (needle === "" || r.character.toLowerCase().includes(needle)) &&
+        (account === "all" || r.account === account),
+    );
+  }, [tktRows, q, account]);
+
+  const filteredLum = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return lumRows.filter(
+      (r) =>
+        (needle === "" || r.character.toLowerCase().includes(needle)) &&
+        (account === "all" || r.account === account),
+    );
+  }, [lumRows, q, account]);
 
   const grandTotal = filtered.reduce((s, r) => s + r.total, 0);
 
@@ -202,6 +274,39 @@ export default function Lookup({ auth }: { auth: AuthState }) {
     return cols;
   }, [towns, hiddenTowns]);
 
+  const charCol = (r: { account: string; character: string; level: number; prof: string }) => (
+    <div>
+      <div>{r.character}</div>
+      <div className="muted" style={{ fontSize: "0.85em" }}>
+        {r.account} · L{r.level} {r.prof}
+      </div>
+    </div>
+  );
+
+  const tktColumns = useMemo<Column<TicketRow>[]>(
+    () => [
+      { key: "character", header: "Character", sortable: true, render: charCol },
+      { key: "source", header: "Source", sortable: true },
+      { key: "amount", header: "Amount", sortable: true, align: "right", render: (r) => fmt(r.amount) },
+      { key: "currency", header: "Currency", sortable: true },
+    ],
+    [],
+  );
+
+  const lumColumns = useMemo<Column<LumnisRow>[]>(
+    () => [
+      { key: "character", header: "Character", sortable: true, render: charCol },
+      { key: "status", header: "Status", sortable: true },
+      { key: "triple", header: "Triple", sortable: true, align: "right", render: (r) => fmt(r.triple) },
+      { key: "double", header: "Double", sortable: true, align: "right", render: (r) => fmt(r.double) },
+      { key: "total", header: "Total", sortable: true, align: "right", render: (r) => fmt(r.total) },
+      { key: "start_day", header: "Start Day", sortable: true },
+      { key: "start_time", header: "Start Time", sortable: true },
+      { key: "last_schedule", header: "Last Schedule", sortable: true },
+    ],
+    [],
+  );
+
   const resColumns = useMemo<Column<ResourceRow>[]>(
     () => [
       {
@@ -240,15 +345,15 @@ export default function Lookup({ auth }: { auth: AuthState }) {
         tabs={[
           { id: "bank", label: "Bank" },
           { id: "resources", label: "Resources" },
-          { id: "tickets", label: "Tickets", disabled: true },
+          { id: "tickets", label: "Tickets" },
           { id: "items", label: "Items", disabled: true },
         ]}
         activeId={activeTab}
-        onChange={(id) => setActiveTab(id as "bank" | "resources")}
+        onChange={(id) => setActiveTab(id as "bank" | "resources" | "tickets")}
         ariaLabel="Lookup sections"
       />
       <p className="muted" style={{ margin: "var(--space-2) 0 var(--space-4) 0" }}>
-        Tickets and Items arrive in steps 3–4; launch ▸ is wired in step 5.
+        Items arrive in step 4; launch ▸ is wired in step 5.
       </p>
 
       <div className="toolbar" style={{ maxWidth: "640px", marginBottom: "var(--space-4)" }}>
@@ -325,7 +430,7 @@ export default function Lookup({ auth }: { auth: AuthState }) {
             <strong>{fmt(grandTotal)}</strong> silvers
           </p>
         </>
-      ) : (
+      ) : activeTab === "resources" ? (
         <>
           <Table
             columns={resColumns}
@@ -337,6 +442,38 @@ export default function Lookup({ auth }: { auth: AuthState }) {
           />
           <p className="muted" style={{ marginTop: "var(--space-3)", textAlign: "right" }}>
             {filteredRes.length} {filteredRes.length === 1 ? "character" : "characters"} have resource data
+          </p>
+        </>
+      ) : (
+        <>
+          <h2 className="page-header-title" style={{ fontSize: "var(--font-size-lg)", margin: "0 0 var(--space-2) 0" }}>
+            Tickets
+          </h2>
+          <Table
+            columns={tktColumns}
+            rows={filteredTkt}
+            rowKey={(r) => `${r.character}-${r.source}`}
+            ariaLabel="Character tickets"
+            loading={loadingTkt}
+            emptyState="No ticket data found."
+          />
+          <p className="muted" style={{ marginTop: "var(--space-2)", textAlign: "right" }}>
+            {filteredTkt.length} {filteredTkt.length === 1 ? "entry" : "entries"}
+          </p>
+
+          <h2 className="page-header-title" style={{ fontSize: "var(--font-size-lg)", margin: "var(--space-5) 0 var(--space-2) 0" }}>
+            Lumnis
+          </h2>
+          <Table
+            columns={lumColumns}
+            rows={filteredLum}
+            rowKey={(r) => String(r.character)}
+            ariaLabel="Character lumnis status"
+            loading={loadingTkt}
+            emptyState="No lumnis data found."
+          />
+          <p className="muted" style={{ marginTop: "var(--space-2)", textAlign: "right" }}>
+            {filteredLum.length} {filteredLum.length === 1 ? "character" : "characters"} have lumnis data
           </p>
         </>
       )}
