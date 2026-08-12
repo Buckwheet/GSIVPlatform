@@ -7,6 +7,53 @@ export class InventoryDbError extends Error {}
 /** Raised when an invdb-style filter expression cannot be turned into SQL. */
 export class SearchSyntaxError extends Error {}
 
+export interface OverviewTableFreshness {
+  table: string;
+  asOf: string | null;
+  daysOld: number | null;
+}
+
+export interface OverviewNotice {
+  level: "info" | "warn";
+  message: string;
+}
+
+export interface OverviewCharacterRow {
+  character: string;
+  account: string;
+  prof: string;
+  level: number;
+  race: string;
+  totalSilver: number;
+  itemCount: number;
+  resourceTotal: number | null;
+  energy: string | null;
+  lumnisTotal: number | null;
+  lumnisStatus: string | null;
+  ticketCount: number;
+  lastScan: number | null;
+}
+
+export interface Overview {
+  stats: {
+    characters: number;
+    accounts: number;
+    items: number;
+    totalSilver: number;
+    dataAsOf: string | null;
+    tableFreshness: OverviewTableFreshness[];
+  };
+  perCharacter: OverviewCharacterRow[];
+  distributions: {
+    itemTypes: { label: string; count: number }[];
+    itemLocations: { label: string; count: number }[];
+    townBanks: { label: string; amount: number }[];
+    richest: { character: string; totalSilver: number }[];
+    topHoards: { character: string; itemCount: number }[];
+  };
+  notices: OverviewNotice[];
+}
+
 /** One parsed filter from an invdb-style expression (mirrors invdb.lic's `h` hash). */
 export interface InvFilter {
   name: string;
@@ -460,5 +507,181 @@ export class InventoryStore {
          FROM tickets t JOIN character c ON t.character_id = c.id ORDER BY c.name, t.source`,
       )
       .all() as Record<string, unknown>[];
+  }
+
+  /**
+   * Unified overview (step 6): everything invdb collects in one dashboard payload —
+   * global stats + per-table freshness, one aggregate row per character, top-N
+   * distributions, and data-quality notices. nowSec is injectable for tests.
+   */
+  overview(nowSec: number = Math.floor(Date.now() / 1000)): Overview {
+    const freshness = this.db
+      .prepare(
+        `SELECT t AS "table", ts FROM (
+          SELECT 'character' AS t, MAX(timestamp) AS ts FROM character
+          UNION ALL SELECT 'item', MAX(timestamp) FROM item
+          UNION ALL SELECT 'silver', MAX(timestamp) FROM silver
+          UNION ALL SELECT 'resource', MAX(timestamp) FROM resource
+          UNION ALL SELECT 'tickets', MAX(timestamp) FROM tickets
+          UNION ALL SELECT 'lumnis', MAX(timestamp) FROM lumnis
+          UNION ALL SELECT 'account', MAX(timestamp) FROM account
+        )`,
+      )
+      .all() as { table: string; ts: number | null }[];
+
+    const tableFreshness = freshness.map(({ table, ts }) => ({
+      table,
+      asOf: ts === null ? null : new Date(ts * 1000).toISOString(),
+      daysOld: ts === null ? null : Math.max(0, Math.floor((nowSec - ts) / 86400)),
+    }));
+
+    const chars = this.db.prepare("SELECT COUNT(*) AS n FROM character").get() as { n: number };
+    const accounts = this.db.prepare("SELECT COUNT(DISTINCT account) AS n FROM character").get() as { n: number };
+    const items = this.db.prepare("SELECT COUNT(*) AS n FROM item").get() as { n: number };
+    const totalSilver = this.db
+      .prepare("SELECT SUM(amount) AS n FROM silver WHERE bank_id IN (SELECT id FROM bank WHERE name != 'Total')")
+      .get() as { n: number | null };
+
+    const perCharacter = this.db
+      .prepare(
+        `SELECT c.name AS character, c.account, c.prof, c.level, c.race,
+          COALESCE(
+            (SELECT MAX(s.amount) FROM silver s JOIN bank b ON s.bank_id = b.id
+              WHERE s.character_id = c.id AND b.name = 'Total'),
+            (SELECT SUM(s.amount) FROM silver s JOIN bank b ON s.bank_id = b.id
+              WHERE s.character_id = c.id AND b.name != 'Total')
+          ) AS total_silver,
+          (SELECT COUNT(*) FROM item i WHERE i.character_id = c.id) AS item_count,
+          r.total AS resource_total, r.energy,
+          CAST(l.total AS INTEGER) AS lumnis_total, l.status AS lumnis_status,
+          (SELECT COUNT(*) FROM tickets t WHERE t.character_id = c.id) AS ticket_count,
+          (SELECT MAX(ts) FROM (
+            SELECT MAX(timestamp) AS ts FROM item i WHERE i.character_id = c.id
+            UNION ALL SELECT MAX(timestamp) FROM silver s WHERE s.character_id = c.id
+            UNION ALL SELECT MAX(timestamp) FROM resource r2 WHERE r2.character_id = c.id
+            UNION ALL SELECT MAX(timestamp) FROM tickets t2 WHERE t2.character_id = c.id
+            UNION ALL SELECT MAX(timestamp) FROM lumnis l2 WHERE l2.character_id = c.id
+          )) AS last_scan
+         FROM character c
+         LEFT JOIN resource r ON r.character_id = c.id
+         LEFT JOIN lumnis l ON l.character_id = c.id
+         ORDER BY c.name`,
+      )
+      .all() as {
+      character: string;
+      account: string;
+      prof: string;
+      level: number;
+      race: string;
+      total_silver: number | null;
+      item_count: number;
+      resource_total: number | null;
+      energy: string | null;
+      lumnis_total: number | null;
+      lumnis_status: string | null;
+      ticket_count: number;
+      last_scan: number | null;
+    }[];
+
+    const normalized = perCharacter.map((r) => ({
+      character: r.character,
+      account: r.account,
+      prof: r.prof,
+      level: r.level,
+      race: r.race,
+      totalSilver: r.total_silver ?? 0,
+      itemCount: r.item_count,
+      resourceTotal: r.resource_total,
+      energy: r.energy,
+      lumnisTotal: r.lumnis_total,
+      lumnisStatus: r.lumnis_status,
+      ticketCount: r.ticket_count,
+      lastScan: r.last_scan,
+    }));
+
+    const distributions = {
+      itemTypes: this.db
+        .prepare(
+          "SELECT lower(trim(type)) AS label, COUNT(*) AS count FROM item GROUP BY label ORDER BY count DESC, label LIMIT 10",
+        )
+        .all() as { label: string; count: number }[],
+      itemLocations: this.db
+        .prepare(
+          "SELECT l.type AS label, COUNT(*) AS count FROM item i JOIN location l ON i.location_id = l.id GROUP BY l.type ORDER BY count DESC, label LIMIT 8",
+        )
+        .all() as { label: string; count: number }[],
+      townBanks: this.db
+        .prepare(
+          "SELECT b.name AS label, SUM(s.amount) AS amount FROM silver s JOIN bank b ON s.bank_id = b.id WHERE b.name != 'Total' GROUP BY b.name ORDER BY amount DESC, label LIMIT 8",
+        )
+        .all() as { label: string; amount: number }[],
+      richest: [...normalized]
+        .sort((a, b) => b.totalSilver - a.totalSilver)
+        .slice(0, 8)
+        .map((r) => ({ character: r.character, totalSilver: r.totalSilver })),
+      topHoards: [...normalized]
+        .sort((a, b) => b.itemCount - a.itemCount)
+        .slice(0, 8)
+        .map((r) => ({ character: r.character, itemCount: r.itemCount })),
+    };
+
+    const notices: OverviewNotice[] = [];
+    if (chars.n === 0) {
+      notices.push({
+        level: "info",
+        message: "No scan data yet - run a scan (Inventory > Run scan now) or wait for the daily scan.",
+      });
+    }
+    for (const f of tableFreshness) {
+      if (f.table === "account") continue; // premium points are a separate collection, not scan freshness
+      if (f.daysOld !== null && f.daysOld > 7) {
+        notices.push({
+          level: "warn",
+          message: `${f.table} data is ${f.daysOld} days old (last scanned ${(f.asOf ?? "").slice(0, 10)}) - run a scan to refresh it.`,
+        });
+      }
+    }
+    const noItems = normalized.filter((r) => r.itemCount === 0);
+    if (noItems.length > 0) {
+      notices.push({
+        level: "info",
+        message: `${noItems.length} ${noItems.length === 1 ? "character has" : "characters have"} no item data (never fully scanned): ${noItems
+          .slice(0, 5)
+          .map((r) => r.character)
+          .join(", ")}${noItems.length > 5 ? ` +${noItems.length - 5} more` : ""}.`,
+      });
+    }
+    const noBank = normalized.filter((r) => r.totalSilver === 0 && this.hasNoSilverRows(r.character));
+    if (noBank.length > 0) {
+      notices.push({
+        level: "info",
+        message: `${noBank.length} ${noBank.length === 1 ? "character has" : "characters have"} no bank data: ${noBank
+          .slice(0, 5)
+          .map((r) => r.character)
+          .join(", ")}${noBank.length > 5 ? ` +${noBank.length - 5} more` : ""}.`,
+      });
+    }
+
+    return {
+      stats: {
+        characters: chars.n,
+        accounts: accounts.n,
+        items: items.n,
+        totalSilver: totalSilver.n ?? 0,
+        dataAsOf: tableFreshness.find((f) => f.asOf !== null)?.asOf ?? null,
+        tableFreshness,
+      },
+      perCharacter: normalized,
+      distributions,
+      notices,
+    };
+  }
+
+  /** True when a character has no silver rows at all (no bank data recorded). */
+  private hasNoSilverRows(character: string): boolean {
+    const row = this.db
+      .prepare("SELECT COUNT(*) AS n FROM silver s JOIN character c ON s.character_id = c.id WHERE c.name = ?")
+      .get(character) as { n: number };
+    return row.n === 0;
   }
 }

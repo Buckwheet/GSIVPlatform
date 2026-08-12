@@ -277,3 +277,70 @@ describe("inventory scheduler routes", () => {
     expect(body.running).toBe(false);
   });
 });
+
+describe("inventory overview route", () => {
+  let dir: string;
+  let dbPath: string;
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "gsiv-inv-ov-route-"));
+    dbPath = join(dir, "inv.db3");
+    const db = buildInvFixture();
+    db.exec(`VACUUM INTO '${dbPath.replace(/'/g, "''")}'`);
+    db.close();
+  });
+
+  const stores: InventoryStore[] = [];
+
+  afterAll(() => {
+    for (const store of stores) store.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function makeApp(tokensEnv: string) {
+    const store = new InventoryStore(dbPath);
+    stores.push(store);
+    const registry = new Registry();
+    registry.register(healthModule);
+    registry.register(createInventoryModule(store));
+    registry.validate();
+    const auth = new Auth(new InMemoryKV());
+    auth.loadFromEnv(tokensEnv);
+    const db = new CoreDb(":memory:");
+    return createApp({ registry, kv: new InMemoryKV(), db, auth, eventBus: new EventBus() });
+  }
+
+  it("denies without inventory.read (403)", async () => {
+    const app = makeApp("limited:tok:health.read");
+    const res = await app.request("/api/modules/inventory/overview", { headers: { Authorization: "Bearer tok" } });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns the unified overview payload for inventory.read", async () => {
+    const app = makeApp("limited:tok:inventory.read");
+    const res = await app.request("/api/modules/inventory/overview", { headers: { Authorization: "Bearer tok" } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      stats: { characters: number; items: number; totalSilver: number; tableFreshness: { table: string }[] };
+      perCharacter: { character: string }[];
+      distributions: { itemTypes: unknown[]; townBanks: unknown[] };
+      notices: { level: string }[];
+    };
+    expect(body.stats.characters).toBe(2);
+    expect(body.stats.items).toBe(6);
+    expect(body.stats.totalSilver).toBe(134999);
+    expect(body.stats.tableFreshness.length).toBeGreaterThanOrEqual(7);
+    expect(body.perCharacter.length).toBe(2);
+    expect(body.perCharacter[0].character).toBe("Fisternar");
+    expect(body.distributions.itemTypes.length).toBeGreaterThan(0);
+    expect(Array.isArray(body.notices)).toBe(true);
+  });
+
+  it("exposes /overview in the OpenAPI spec", async () => {
+    const app = makeApp("admin:tok:*");
+    const res = await app.request("/api/spec", { headers: { Authorization: "Bearer tok" } });
+    expect(res.status).toBe(200);
+    const spec = (await res.json()) as { paths: Record<string, unknown> };
+    expect(spec.paths["/api/modules/inventory/overview"]).toBeDefined();
+  });
+});
