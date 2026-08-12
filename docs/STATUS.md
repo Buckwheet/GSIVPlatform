@@ -158,33 +158,43 @@ Separate workstream: **scheduler UX redesign** (move off the Inventory page; bat
 status/auto_added columns — no more delete-and-reinsert; last_seen preserved for entry_only rows), 4e4f68a
 (auto-add SGE-discovered chars to entry.yaml during scanOne), 02cf714 (GET /accounts/stale — entry_only chars +
 bad_password/error/decrypt_error accounts, accounts.read), b92d54e (Accounts page stale banner). 319 backend
-tests green. **Server:** entry.yaml merged to 36 accounts (35 local C:lich5 + KAISER999 server-only; local wins;
+tests green. **Server:** entry.yaml merged to 36 accounts (35 local C:\lich5 + KAISER999 server-only; local wins;
 backup entry.yaml.bak-roster-migrate-20260812-215148; all decrypt standard-mode verified). LWELLS5500 scan
 verified live: auth ok; **Scorpa flagged stale (entry_only, never seen active — the user's suspicion confirmed)**;
 Dillydilly/Ryallian/Stallo auto-added to entry.yaml (auto_added=1); Skaad known. Weekly timer installed:
-`gsiv-roster-scan.timer` (Mon 03:30 UTC, Persistent=true) → `gsiv-roster-scan.service` → wrapper
-/opt/gsiv-platform/scripts/gsiv-roster-scan.sh with /etc/gsiv-roster-scan.env (0600). **PENDING:** add
-`accounts.read,accounts.write` to the machine token in server .env AUTH_TOKENS + restart + force-run the timer
-once to verify the machine-token path (deferred until the full 36-account backfill finishes — restart kills the
-in-progress scan).
+`gsiv-roster-scan.timer` (Mon 03:30 UTC, Persistent=true, next run Mon 2026-08-17 03:30 UTC) →
+`gsiv-roster-scan.service` → wrapper /opt/gsiv-platform/scripts/gsiv-roster-scan.sh with
+/etc/gsiv-roster-scan.env (0600). Machine token in server .env AUTH_TOKENS extended with
+`accounts.read,accounts.write`; timer force-run via the machine token verified ({"ok":true,"total":36}).
+**Full 36-account backfill results: 19 auth ok / 8 error / 9 bad_password** — dead accounts: FUTTILO, MARSTON,
+MSMI2779, PAJENNEY, PJENNEY, SHIMSHAM1, SJEWETT33, SSMITH, SWAMI2, TALONTED, TOREE, TRALIS, TRALL541,
+TWORAZORS, USHER1, VERYDASHING1, WOJO1. **109 chars (79 active / 30 entry_only); 45 chars auto-added** to
+entry.yaml (incl. Fullstack, Shortstacks, Shortystacks, Shortystax, Twinklytoe, Chemassist, Knovah, Regnar,
+Apious, Pace, Rhezikk, Tahreal, Thadior...). Stale incl. **Scorpa (LWELLS5500)**, **Mahres (BUCKWHEET)**, Bilz
+(ADRED), Aeton (JEMLEY), Kraytok (JG01). Working tree clean.
 
 **Dev:** gate = `cd backend && npm test && npm run typecheck && npm run lint` + `cd frontend && npm run build`. Run backend (`cd backend && AUTH_TOKENS=... npx tsx src/index.ts`) + frontend (`npm run dev`), paste token in the UI. Kill stale dev servers (:3102/:5173) before redeploying. **Edits to this repo go through bash** (D: path — file tools are confined to the C: workspace). Redeploy recipe + lich module docs: `deploy/V2-DEPLOYMENT.md` (§Lich migration).
 
 **Restart prompt (copy-paste into a new session when resuming):**
 
-> Continue GSIVPlatform work in `D:\Code Projects\GSIVPlatform` (repo outside the C:\ workspace — all edits
+> Continue GSIVPlatform work in `D:\Code Projects\GSIVPlatform` (repo outside the C: workspace — all edits
 > through bash; file tools refuse D:). Read docs/STATUS.md §7 first — it has the session log with the full state.
-> Item-search feature on /lookup: steps 1–5 DONE + live (Bank, Resources, Tickets+Lumnis, Items tabs — the Items
-> tab uses the invdb filter grammar: bare words, `type=`/`location=`/`amount>N`/`level>N`/`!=`/`/regex/`/
-> `*` wildcards, `a|b` arrays, `limit=`/`orderby=`; `launch ▸` brings a char online — start-then-open for
-> offline chars when the token has a write scope). Steps 1–6 + Overview DONE + live. NEXT = **weekly roster
-> sync** (SGE gather/verify/correct on the accounts module; 36 accounts migrated to entry.yaml; lwells5500
-> verified live — Scorpa flagged stale, new chars auto-added; gsiv-roster-scan.timer Mon 03:30 UTC; then the
-> stale-char cleanup workstream consumes GET /accounts/stale). Testing rule:
+> LOOKUP page: steps 1–6 DONE + live — Overview (default dashboard tab), Bank, Resources, Tickets+Lumnis, Items
+> (invdb filter grammar: bare words, `type=`/`location=`/`amount>N`/`level>N`/`!=`/`/regex/`/`*` wildcards,
+> `a|b` arrays, `limit=`/`orderby=`; `launch ▸` start-then-open for stream-configured chars with a write scope).
+> ROSTER SYNC DONE + live (2026-08-12): v2 accounts module = weekly SGE poll (verify auth, auto-add new chars to
+> entry.yaml, flag stale) — per-row upsert (status active|entry_only, auto_added, preserved last_seen), GET
+> /api/modules/accounts/accounts/stale, Accounts page stale banner; server entry.yaml = 36 accounts (migrated
+> from local C:\lich5, backup entry.yaml.bak-roster-migrate-20260812-215148); gsiv-roster-scan.timer Mon 03:30
+> UTC; machine token has accounts.read,accounts.write. First backfill: 19 ok / 8 error / 9 bad_password; 45
+> chars auto-added; 30 stale (Scorpa, Mahres, Bilz...). NEXT = **stale-char cleanup** — consume GET
+> /accounts/stale to drop the 17 dead accounts + stale chars from entry.yaml / inv.db3 / characters module
+> (this is what makes invdb accurate); then **scheduler UX redesign**. Testing rule:
 > Fisternar/Neleourg only, Amn off-limits. Server: `ssh -i ~/.ssh/id_ed25519 ubuntu@51.68.235.144` (origin IP;
 > the DNS name is Cloudflare-fronted and unreachable) — runbook at top of /opt/gsiv-platform/backend/.env;
 > frontend deploys MUST copy contents into /opt/gsiv-platform/frontend (Caddy root), never dist/; verify the
 > public bundle is text/javascript (CF cache poisoning gotcha). Workflow: branch → `gh pr merge`. Parked:
-> **stale-char cleanup from invdb** (next workstream — consumes GET /accounts/stale: Scorpa + Overview notice candidates Adred_/Buckt2_/Buckwheet_, 13 chars with zero items), **scheduler UX redesign** (batch-by-account
-> orchestrator, move off the Inventory page). Recall memories: next-feature-interactive-... ,
+> **scheduler UX redesign** (batch-by-account orchestrator, move off the Inventory page), **roster-sync Phase B**
+> (play.net inactive-char scrape — deleted chars with level/prof). Recall memories:
+> gsivplatform-weekly-roster-sync-live-... , next-feature-interactive-... ,
 > gsiv-server-ssh-origin-ip-... , invdb-lic-patches-... .
