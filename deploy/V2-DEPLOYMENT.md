@@ -60,10 +60,17 @@ ssh ubuntu@51.68.235.144 "set -e
   sudo cp -r /tmp/gsiv-deploy/dist /opt/gsiv-platform/backend/   # overwrites backend/dist
   sudo cp /tmp/gsiv-deploy/package.json /tmp/gsiv-deploy/package-lock.json /opt/gsiv-platform/backend/
   sudo rm -rf /opt/gsiv-platform/frontend && sudo mkdir -p /opt/gsiv-platform/frontend
-  sudo cp -r /tmp/gsiv-deploy/frontend/dist/* /opt/gsiv-platform/frontend/
+  sudo cp -r /tmp/gsiv-deploy/frontend-dist/. /opt/gsiv-platform/frontend/   # contents -> Caddy root (NOT frontend/dist)
   cd /opt/gsiv-platform/backend && sudo npm install --omit=dev
   sudo systemctl restart gsiv-platform"
 ```
+
+**Frontend deploy gotcha (hit 2026-08-12):** Caddy serves the SPA from `/opt/gsiv-platform/frontend`
+directly (`root * /opt/gsiv-platform/frontend`), NOT `frontend/dist`. Deploying the build as
+`frontend/dist/` leaves the live `index.html` stale, and requests for the new hashed asset URLs then hit
+Caddy's `try_files -> /index.html` fallback — which Cloudflare caches as the asset (HTML served as JS,
+app fails to boot / old UI). After any frontend deploy, verify the live URL serves the new bundle hash
+(grep the deployed `index.html` for `assets/index-*` and fetch that bundle — it must be `text/javascript`, not HTML).
 
 ## Caching (browser/Cloudflare) — set 2026-08-12 in /etc/caddy/Caddyfile (@gsiv handle)
 

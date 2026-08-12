@@ -28,7 +28,12 @@ export function AppShell({ auth, onSignOut }: Props) {
   return (
     <div className="shell">
       <aside className="sidebar">
-        <div className="brand">◎ GSIV</div>
+        <div className="brand">
+          ◎ GSIV
+          <span className="muted" style={{ fontSize: "var(--font-size-sm)", marginLeft: "var(--space-2)" }}>
+            build 2026-08-12
+          </span>
+        </div>
         <nav aria-label="Primary">
           {NAV_GROUPS.map((group) => {
             const items = visible.filter((i) => i.group === group.id).sort((a, b) => a.order - b.order);
