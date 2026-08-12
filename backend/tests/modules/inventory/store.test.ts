@@ -63,6 +63,11 @@ describe("InventoryStore", () => {
     expect(total?.silvers).toBe(125000);
   });
 
+  it("reports the newest write timestamp across invdb tables", () => {
+    const store = makeStore();
+    expect(store.latestTimestamp()).toBe(1786000100);
+  });
+
   it("searches items by name substring", () => {
     const store = makeStore();
     const hits = store.search("sapphire");
