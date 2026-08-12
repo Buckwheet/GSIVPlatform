@@ -24,7 +24,7 @@ export function buildInvFixture(): Database.Database {
     );
     CREATE TABLE tickets (character_id INTEGER NOT NULL, source TEXT NOT NULL, amount INTEGER NOT NULL, currency TEXT NOT NULL, timestamp INTEGER NOT NULL, UNIQUE(character_id, source));
     CREATE TABLE resource (character_id INTEGER NOT NULL PRIMARY KEY, energy TEXT NOT NULL DEFAULT '', weekly INTEGER NOT NULL DEFAULT 0, total INTEGER NOT NULL DEFAULT 0, suffused INTEGER NOT NULL DEFAULT 0, favor INTEGER NOT NULL DEFAULT 0, bonus INTEGER NOT NULL DEFAULT 0, timestamp INTEGER NOT NULL DEFAULT 0);
-    CREATE TABLE lumnis (character_id INTEGER NOT NULL, status TEXT NOT NULL DEFAULT '', triple INTEGER NOT NULL DEFAULT 0, double INTEGER NOT NULL DEFAULT 0, total INTEGER NOT NULL DEFAULT 0, start_day TEXT NOT NULL DEFAULT '', start_time TEXT NOT NULL DEFAULT '', last_schedule TEXT NOT NULL DEFAULT '', timestamp INTEGER NOT NULL DEFAULT 0);
+    CREATE TABLE lumnis (character_id INTEGER NOT NULL, status TEXT NOT NULL DEFAULT '', triple TEXT NOT NULL DEFAULT '', double TEXT NOT NULL DEFAULT '', total TEXT NOT NULL DEFAULT '', start_day TEXT NOT NULL DEFAULT '', start_time TEXT NOT NULL DEFAULT '', last_schedule TEXT NOT NULL DEFAULT '', timestamp INTEGER NOT NULL DEFAULT 0);
   `);
 
   const insChar = db.prepare(

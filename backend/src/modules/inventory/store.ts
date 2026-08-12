@@ -126,8 +126,10 @@ export class InventoryStore {
     return this.db
       .prepare(
         `SELECT c.name as character, c.account, c.prof, c.level,
-          CAST(l.status AS TEXT) as status, l.triple, l.double, l.total,
-          l.start_day, l.start_time, l.last_schedule
+          CAST(l.status AS TEXT) as status,
+          CAST(l.triple AS INTEGER) as triple, CAST(l.double AS INTEGER) as double, CAST(l.total AS INTEGER) as total,
+          CAST(l.start_day AS TEXT) as start_day, CAST(l.start_time AS TEXT) as start_time,
+          CAST(l.last_schedule AS TEXT) as last_schedule
          FROM lumnis l JOIN character c ON l.character_id = c.id ORDER BY c.name`,
       )
       .all() as Record<string, unknown>[];
