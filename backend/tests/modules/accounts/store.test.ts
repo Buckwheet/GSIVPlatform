@@ -305,4 +305,44 @@ describe("AccountsStore", () => {
 
     rmSync(dir, { recursive: true, force: true });
   });
+
+  it("cleanupStale dryRun previews without mutating", async () => {
+    const fake = new FakeInvDb();
+    const dir = mkdtempSync(join(tmpdir(), "acct-cleanup-dry-"));
+    const yamlPath = join(dir, "entry.yaml");
+    copyFileSync(FIXTURE, yamlPath);
+    const yaml = new EntryYaml(yamlPath);
+    const { db, store } = makeStore({ yaml, invDb: fake });
+
+    const ins = db.get();
+    ins
+      .prepare("INSERT INTO accounts (account_name, auth_status, last_scan) VALUES ('BUCKWHEET','bad_password',1)")
+      .run();
+    ins.prepare("INSERT INTO accounts (account_name, auth_status, last_scan) VALUES ('ALT','ok',1)").run();
+    ins
+      .prepare(
+        "INSERT INTO account_characters (account_name, char_name, status) VALUES ('BUCKWHEET','Fisternar','entry_only')",
+      )
+      .run();
+    ins
+      .prepare(
+        "INSERT INTO account_characters (account_name, char_name, status) VALUES ('ALT','Neleourg','entry_only')",
+      )
+      .run();
+
+    const res = await store.cleanupStale(true);
+    expect(res.dryRun).toBe(true);
+    expect(res.removedAccounts).toBe(1);
+    expect(res.removedCharacters).toBe(1); // ALT's Neleourg (BUCKWHEET's Fisternar belongs to the account)
+
+    // nothing mutated
+    expect(yaml.read().length).toBe(3); // Fisternar, Zepherus (BUCKWHEET) + Neleourg (ALT)
+    const list = await store.list();
+    expect(list.accounts.length).toBe(2);
+    expect(list.characters.length).toBe(2);
+    expect(fake.deletedAccounts).toEqual([]);
+    expect(fake.deletedCharacters).toEqual([]);
+
+    rmSync(dir, { recursive: true, force: true });
+  });
 });

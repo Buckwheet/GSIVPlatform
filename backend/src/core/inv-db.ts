@@ -119,7 +119,8 @@ export class InvDb implements InvDbCleaner {
       tx();
       return { ok: true, removedCharacters, removedItems };
     } catch (err) {
-      return { ok: false, error: (err as Error).message, removedCharacters: 0, removedItems: 0 };
+      console.error("invdb delete failed:", err);
+      return { ok: false, error: "inv.db3 write failed", removedCharacters: 0, removedItems: 0 };
     }
   }
 
@@ -154,7 +155,8 @@ export class InvDb implements InvDbCleaner {
       tx();
       return { ok: true, removedCharacters, removedItems };
     } catch (err) {
-      return { ok: false, error: (err as Error).message, removedCharacters: 0, removedItems: 0 };
+      console.error("invdb delete failed:", err);
+      return { ok: false, error: "inv.db3 write failed", removedCharacters: 0, removedItems: 0 };
     }
   }
 

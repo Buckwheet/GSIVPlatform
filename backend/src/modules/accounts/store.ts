@@ -269,10 +269,12 @@ export class AccountsStore {
    * Drop every flagged account/char from entry.yaml + gsiv.db + inv.db3.
    * Dead accounts are removed first (taking their chars with them); the
    * remaining entry_only chars on live accounts are removed individually.
-   * No password decrypt — deletion only needs names.
+   * No password decrypt — deletion only needs names. dryRun previews the
+   * exact set without mutating anything (review before the real run).
    */
-  async cleanupStale(): Promise<{
+  async cleanupStale(dryRun = false): Promise<{
     ok: boolean;
+    dryRun: boolean;
     removedAccounts: number;
     removedCharacters: number;
     steps: { action: string; result: string }[];
@@ -285,6 +287,14 @@ export class AccountsStore {
 
     for (const acct of accounts) {
       const key = acct.account_name;
+      if (dryRun) {
+        removedAccounts += 1;
+        steps.push({
+          action: `Would remove account ${key} (entry.yaml + dashboard DB + inv.db3)`,
+          result: "dry-run",
+        });
+        continue;
+      }
       const y = this.yaml.deleteAccount(key);
       steps.push({ action: `Remove ${key} from entry.yaml`, result: y.removed ? "ok" : "not found" });
       if (y.removed) removedAccounts += 1;
@@ -299,6 +309,14 @@ export class AccountsStore {
 
     for (const ch of characters) {
       if (dead.has(ch.account_name)) continue; // already removed with the account
+      if (dryRun) {
+        removedCharacters += 1;
+        steps.push({
+          action: `Would remove ${ch.char_name} (${ch.account_name})`,
+          result: "dry-run",
+        });
+        continue;
+      }
       const y = this.yaml.deleteCharacter(ch.account_name, ch.char_name);
       steps.push({
         action: `Remove ${ch.char_name} (${ch.account_name}) from entry.yaml`,
@@ -317,7 +335,7 @@ export class AccountsStore {
       });
     }
 
-    return { ok: true, removedAccounts, removedCharacters, steps };
+    return { ok: true, dryRun, removedAccounts, removedCharacters, steps };
   }
 
   /** Delete an account: entry.yaml + scan db, with per-step results (v1 steps shape). */

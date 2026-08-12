@@ -148,6 +148,7 @@ const entryAccountBody = z.object({ account_name: z.string(), password: z.string
 const entryPasswordBody = z.object({ password: z.string(), totp_code: z.string() });
 const entryCharBody = z.object({ char_name: z.string(), game_code: z.string().optional(), totp_code: z.string() });
 const totpOnlyBody = z.object({ totp_code: z.string() });
+const cleanupBody = z.object({ totp_code: z.string(), dry_run: z.boolean().optional() });
 
 const stepsSchema = z.object({ steps: z.array(z.object({ action: z.string(), result: z.string() })) });
 
@@ -224,13 +225,14 @@ const entryDeleteCharacterRoute = createRoute({
 const cleanupStaleRoute = createRoute({
   method: "post",
   path: "/accounts/stale/cleanup",
-  request: { body: { content: { "application/json": { schema: totpOnlyBody } } } },
+  request: { body: { content: { "application/json": { schema: cleanupBody } } } },
   responses: {
     200: {
       content: {
         "application/json": {
           schema: z.object({
             ok: z.boolean(),
+            dryRun: z.boolean(),
             removedAccounts: z.number(),
             removedCharacters: z.number(),
             steps: z.array(z.object({ action: z.string(), result: z.string() })),
@@ -358,10 +360,10 @@ export function createAccountsModule(store: AccountsStore, totp: Totp): Module {
       });
 
       router.openapi(cleanupStaleRoute, async (c) => {
-        const { totp_code } = c.req.valid("json");
+        const { totp_code, dry_run } = c.req.valid("json");
         const err = requireTotp(totp, totp_code);
         if (err) return c.json({ error: err }, 403);
-        const res = await store.cleanupStale();
+        const res = await store.cleanupStale(Boolean(dry_run));
         return c.json(res, 200);
       });
     },
