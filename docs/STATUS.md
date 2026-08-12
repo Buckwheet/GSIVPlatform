@@ -147,3 +147,18 @@ Separate workstream: **scheduler UX redesign** (move off the Inventory page; bat
 - **Status:** implemented + committed (`093c97b`) (see "Done since this handoff (2026-08-12, cont.)" above). Next session resumes at **step 2 (resources)**.
 
 **Dev:** gate = `cd backend && npm test && npm run typecheck && npm run lint` + `cd frontend && npm run build`. Run backend (`cd backend && AUTH_TOKENS=... npx tsx src/index.ts`) + frontend (`npm run dev`), paste token in the UI. Kill stale dev servers (:3102/:5173) before redeploying. **Edits to this repo go through bash** (D: path — file tools are confined to the C: workspace). Redeploy recipe + lich module docs: `deploy/V2-DEPLOYMENT.md` (§Lich migration).
+
+**Restart prompt (copy-paste into a new session when resuming):**
+
+> Continue GSIVPlatform work in `D:\Code Projects\GSIVPlatform` (repo outside the C:\ workspace — all edits
+> through bash; file tools refuse D:). Read docs/STATUS.md §7 first — it has the session log with the full state.
+> Item-search feature on /lookup: steps 1–3 DONE + live (Bank, Resources, Tickets+Lumnis tabs). NEXT = **step 4
+> (item search — clone invdb.lic's query capability over inv.db3: bare-word name search, `type:`/`location:`/
+> `amount>N`/`!=`/`/regex/`/`*` filters)**, then step 5 launch-a-character, step 6 unified display. Testing rule:
+> Fisternar/Neleourg only, Amn off-limits. Server: `ssh -i ~/.ssh/id_ed25519 ubuntu@51.68.235.144` (origin IP;
+> the DNS name is Cloudflare-fronted and unreachable) — runbook at top of /opt/gsiv-platform/backend/.env;
+> frontend deploys MUST copy contents into /opt/gsiv-platform/frontend (Caddy root), never dist/; verify the
+> public bundle is text/javascript (CF cache poisoning gotcha). Workflow: branch → `gh pr merge`. Parked:
+> **Mahres + stale chars cleanup from invdb** (user: do later), **scheduler UX redesign** (batch-by-account
+> orchestrator, move off the Inventory page). Recall memories: next-feature-interactive-... ,
+> gsiv-server-ssh-origin-ip-... , invdb-lic-patches-... .
