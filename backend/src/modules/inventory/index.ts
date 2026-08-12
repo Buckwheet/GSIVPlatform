@@ -39,6 +39,7 @@ const searchRowSchema = z.object({
 
 const resourceRowSchema = z.object({
   character: z.string(),
+  account: z.string(),
   prof: z.string(),
   level: z.number(),
   energy: z.string(),

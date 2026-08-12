@@ -23,6 +23,19 @@ interface DisplayRow {
   [town: string]: string | number;
 }
 
+interface ResourceRow {
+  character: string;
+  account: string;
+  prof: string;
+  level: number;
+  energy: string;
+  weekly: number;
+  total: number;
+  suffused: number;
+  favor: number;
+  bonus: number;
+}
+
 /** Short header labels for the 10 town banks (full name on hover). */
 const TOWN_LABELS: Record<string, string> = {
   "First Elanith Secured Bank": "First Elanith",
@@ -40,11 +53,16 @@ const TOWN_LABELS: Record<string, string> = {
 const fmt = (n: number) => n.toLocaleString("en-US");
 
 export default function Lookup({ auth }: { auth: AuthState }) {
+  const [activeTab, setActiveTab] = useState<"bank" | "resources">("bank");
   const [rows, setRows] = useState<BankRow[]>([]);
+  const [resRows, setResRows] = useState<ResourceRow[]>([]);
+  const [resLoaded, setResLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingRes, setLoadingRes] = useState(false);
   const [q, setQ] = useState("");
   const [account, setAccount] = useState("all");
+  const [hiddenTowns, setHiddenTowns] = useState<string[]>([]);
   const { addToast } = useToast();
 
   useEffect(() => {
@@ -63,7 +81,26 @@ export default function Lookup({ auth }: { auth: AuthState }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auth]);
 
-  const { towns, displayRows, accounts } = useMemo(() => {
+  useEffect(() => {
+    if (activeTab !== "resources" || resLoaded) return;
+    (async () => {
+      setLoadingRes(true);
+      try {
+        setResRows(await api<ResourceRow[]>("/modules/inventory/resources", auth));
+        setError(null);
+      } catch (err) {
+        const msg = (err as Error).message;
+        setError(msg);
+        addToast({ tone: "bad", title: "Resources Data Failed", message: msg });
+      } finally {
+        setResLoaded(true);
+        setLoadingRes(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, resLoaded, auth]);
+
+  const { towns, displayRows } = useMemo(() => {
     const towns: string[] = [];
     const byChar = new Map<
       string,
@@ -88,9 +125,15 @@ export default function Lookup({ auth }: { auth: AuthState }) {
       for (const t of towns) row[t] = c.amounts.get(t) ?? -1;
       return row;
     });
-    const accounts = [...new Set(displayRows.map((r) => r.account))].sort();
-    return { towns, displayRows, accounts };
+    return { towns, displayRows };
   }, [rows]);
+
+  const accounts = useMemo(() => {
+    const s = new Set<string>();
+    for (const r of displayRows) s.add(r.account);
+    for (const r of resRows) s.add(r.account);
+    return [...s].sort();
+  }, [displayRows, resRows]);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -101,9 +144,19 @@ export default function Lookup({ auth }: { auth: AuthState }) {
     );
   }, [displayRows, q, account]);
 
+  const filteredRes = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return resRows.filter(
+      (r) =>
+        (needle === "" || r.character.toLowerCase().includes(needle)) &&
+        (account === "all" || r.account === account),
+    );
+  }, [resRows, q, account]);
+
   const grandTotal = filtered.reduce((s, r) => s + r.total, 0);
 
   const columns = useMemo<Column<DisplayRow>[]>(() => {
+    const visibleTowns = towns.filter((t) => !hiddenTowns.includes(t));
     const cols: Column<DisplayRow>[] = [
       {
         key: "character",
@@ -118,7 +171,7 @@ export default function Lookup({ auth }: { auth: AuthState }) {
           </div>
         ),
       },
-      ...towns.map(
+      ...visibleTowns.map(
         (town) =>
           ({
             key: town,
@@ -147,30 +200,55 @@ export default function Lookup({ auth }: { auth: AuthState }) {
       },
     ];
     return cols;
-  }, [towns]);
+  }, [towns, hiddenTowns]);
+
+  const resColumns = useMemo<Column<ResourceRow>[]>(
+    () => [
+      {
+        key: "character",
+        header: "Character",
+        sortable: true,
+        render: (r) => (
+          <div>
+            <div>{r.character}</div>
+            <div className="muted" style={{ fontSize: "0.85em" }}>
+              {r.account} · L{r.level} {r.prof}
+            </div>
+          </div>
+        ),
+      },
+      { key: "energy", header: "Energy", sortable: true },
+      { key: "weekly", header: "Weekly", sortable: true, align: "right", render: (r) => fmt(r.weekly) },
+      { key: "total", header: "Total", sortable: true, align: "right", render: (r) => fmt(r.total) },
+      { key: "suffused", header: "Suffused", sortable: true, align: "right", render: (r) => fmt(r.suffused) },
+      { key: "favor", header: "Favor", sortable: true, align: "right", render: (r) => fmt(r.favor) },
+      { key: "bonus", header: "Bonus", sortable: true, align: "right", render: (r) => fmt(r.bonus) },
+    ],
+    [],
+  );
 
   return (
     <div>
       <header className="page-header" style={{ flexDirection: "column" }}>
         <h1 className="page-header-title">Lookup</h1>
         <p className="muted" style={{ margin: "var(--space-1) 0 0 0" }}>
-          Interactive view of everything invdb collects — bank balances first (step 1), then resources, tickets, items.
+          Interactive view of everything invdb collects — bank balances, resources, then tickets, items.
         </p>
       </header>
 
       <Tabs
         tabs={[
           { id: "bank", label: "Bank" },
-          { id: "resources", label: "Resources", disabled: true },
+          { id: "resources", label: "Resources" },
           { id: "tickets", label: "Tickets", disabled: true },
           { id: "items", label: "Items", disabled: true },
         ]}
-        activeId="bank"
-        onChange={() => undefined}
+        activeId={activeTab}
+        onChange={(id) => setActiveTab(id as "bank" | "resources")}
         ariaLabel="Lookup sections"
       />
       <p className="muted" style={{ margin: "var(--space-2) 0 var(--space-4) 0" }}>
-        Resources, Tickets and Items arrive in steps 2–4; launch ▸ is wired in step 5.
+        Tickets and Items arrive in steps 3–4; launch ▸ is wired in step 5.
       </p>
 
       <div className="toolbar" style={{ maxWidth: "640px", marginBottom: "var(--space-4)" }}>
@@ -183,6 +261,39 @@ export default function Lookup({ auth }: { auth: AuthState }) {
           options={[{ value: "all", label: "All accounts" }, ...accounts.map((a) => ({ value: a, label: a }))]}
         />
       </div>
+
+      {activeTab === "bank" && (
+        <div
+          className="toolbar"
+          style={{ flexWrap: "wrap", maxWidth: "960px", marginBottom: "var(--space-4)", rowGap: "var(--space-2)" }}
+        >
+          <span className="muted" style={{ marginRight: "var(--space-2)" }}>
+            Towns:
+          </span>
+          {towns.map((t) => {
+            const hidden = hiddenTowns.includes(t);
+            return (
+              <Button
+                key={t}
+                size="sm"
+                variant={hidden ? "ghost" : "primary"}
+                ariaPressed={!hidden}
+                onClick={() => setHiddenTowns((h) => (hidden ? h.filter((x) => x !== t) : [...h, t]))}
+                ariaLabel={`${hidden ? "Show" : "Hide"} ${TOWN_LABELS[t] ?? t}`}
+                title={t}
+              >
+                {TOWN_LABELS[t] ?? t}
+              </Button>
+            );
+          })}
+          <Button size="sm" variant="ghost" onClick={() => setHiddenTowns([])} ariaLabel="Show all towns">
+            All
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setHiddenTowns(towns)} ariaLabel="Hide all towns">
+            None
+          </Button>
+        </div>
+      )}
 
       {error && (
         <div
@@ -199,19 +310,36 @@ export default function Lookup({ auth }: { auth: AuthState }) {
         </div>
       )}
 
-      <Table
-        columns={columns}
-        rows={filtered}
-        rowKey={(r) => String(r.character)}
-        ariaLabel="Bank silvers per character"
-        loading={loading}
-        emptyState="No bank data found (invdb may not be scanned on this backend)."
-      />
-
-      <p className="muted" style={{ marginTop: "var(--space-3)", textAlign: "right" }}>
-        {filtered.length} {filtered.length === 1 ? "character" : "characters"} · Grand total:{" "}
-        <strong>{fmt(grandTotal)}</strong> silvers
-      </p>
+      {activeTab === "bank" ? (
+        <>
+          <Table
+            columns={columns}
+            rows={filtered}
+            rowKey={(r) => String(r.character)}
+            ariaLabel="Bank silvers per character"
+            loading={loading}
+            emptyState="No bank data found (invdb may not be scanned on this backend)."
+          />
+          <p className="muted" style={{ marginTop: "var(--space-3)", textAlign: "right" }}>
+            {filtered.length} {filtered.length === 1 ? "character" : "characters"} · Grand total:{" "}
+            <strong>{fmt(grandTotal)}</strong> silvers
+          </p>
+        </>
+      ) : (
+        <>
+          <Table
+            columns={resColumns}
+            rows={filteredRes}
+            rowKey={(r) => String(r.character)}
+            ariaLabel="Character resources"
+            loading={loadingRes}
+            emptyState="No resource data found (fewer characters have resources scanned)."
+          />
+          <p className="muted" style={{ marginTop: "var(--space-3)", textAlign: "right" }}>
+            {filteredRes.length} {filteredRes.length === 1 ? "character" : "characters"} have resource data
+          </p>
+        </>
+      )}
     </div>
   );
 }

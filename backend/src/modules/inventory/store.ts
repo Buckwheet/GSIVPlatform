@@ -114,7 +114,7 @@ export class InventoryStore {
   resources(): Record<string, unknown>[] {
     return this.db
       .prepare(
-        `SELECT c.name as character, c.prof, c.level,
+        `SELECT c.name as character, c.account, c.prof, c.level,
           CAST(r.energy AS TEXT) as energy, r.weekly, r.total, r.suffused,
           CAST(r.favor AS INTEGER) as favor, r.bonus
          FROM resource r JOIN character c ON r.character_id = c.id ORDER BY c.name`,
