@@ -111,6 +111,7 @@ as the `pricing` module.
 
 **Done since this handoff (2026-08-12, cont.):**
 - **your-shops module live** (`/api/modules/your-shops`, page `/your-shops`, dashboard tile, header bell + badge + toasts): tracks the user's shops (seeded Erendiir, Boiler, Jinsem — editable in the UI, `yourshops.read/write`), lists their sales (273 rows, from pricing.db read-only) and alerts on new sales via a `sale_update` WS event. Per-shop baseline: history never spams alerts; adding a shop baselines it silently.
+- **`/lookup` page + Bank tab live (item-search step 1)**: new Lookup page in the operations group (`/lookup`, order 20, shell-owned core item — no new backend module yet); Bank tab renders sortable per-character × town-bank silvers (10 town columns + stored-Total column), per-char account · L{level} {prof} sub-line, grand total footer, character-name + account filters, currency formatting (thousands separators; missing town = –), disabled `launch ▸` per char (wired in step 5); disabled tabs for Resources/Tickets/Items (steps 2–4). `GET /api/modules/inventory/bank` extended with `account`/`prof`/`level` (stored Total row is authoritative for the per-char total; town-sum fallback when a char has no Total row).
 - **Live pipeline consolidated on v2**: hourly `gsiv-sales-scan.timer` (oneshot service) runs `POST /pricing/scrape` + `POST /your-shops/scan` with the machine token (now also `pricing.scrape,yourshops.read,yourshops.write`; token lives in `/etc/gsiv-sales-scan.env` 0600, not in git). v1 `gs4-sales-scraper.timer` **disabled** — v2 pricing.db is the single live source (16,852 rows and growing; v1 db at `/opt/sales-tracker/data/sales.db` frozen as archive).
 
 **Done since this handoff (2026-08-12):**
@@ -125,7 +126,7 @@ as the `pricing` module.
 - **NEXT FEATURE (user-approved direction, brainstorming started):** clone invdb's query/collection capability into an **interactive item-search** experience — search everything invdb collects, launch a character when a found item looks like the target (so we can look for it in-game), intelligent display of ALL collected data. Deliver stepwise, user signs off per step: **step 1 = bank balances**, then resources, etc. Auto-save progress at each sign-off so a fresh session can resume.
 
 **Item-search feature — stepwise plan (user signs off each step; progress auto-saved after each):**
-1. **Bank balances** (first step) — interactive per-character/per-bank silvers view with filters.
+1. **Bank balances** (first step) — DONE 2026-08-12: interactive per-character/per-bank silvers view with filters on the new `/lookup` page.
 2. **Resources** — energy/weekly/total/suffused/favor/bonus per char.
 3. **Tickets + lumnis** — ticket balances + lumnis status.
 4. **Item search** — clone invdb's query capability (filters incl. `key>N`/`!=`/`/regex/`, arrays, wildcards, bare-word name search) over inv.db3.
@@ -135,10 +136,11 @@ Separate workstream: **scheduler UX redesign** (move off the Inventory page; bat
 
 **Patch-vs-build context (2026-08-12):** the *collection* must run inside a logged-in Lich session (game only reveals inventory to the client) — that's why invdb.lic gets patched for the headless server env (Ruby 4.0.6 gem shadowing, inv.db3 NOT NULL schema, scan timing). The *query/display* layer is dashboard-native (inv.db3 is already read by the v2 inventory module) — that part is built, not patched.
 
-**Step 1 design (bank balances) — awaiting user sign-off:**
+**Step 1 (bank balances) — DONE 2026-08-12:**
 - **Home:** the interactive search feature gets its own page/module (`/lookup`, "Lookup", market or operations group) — NOT the Inventory page (scheduler feedback: keep items page clean). Tabs/sections for each step: Bank → Resources → Tickets → Items. Step 1 = the Bank section.
 - **Data:** from `/opt/gs4sd/lich5/data/inv.db3` — `silver` (character_id, bank_id, amount) joined with `character` + static `bank` (10 towns + Total), via the v2 inventory module (`/api/modules/inventory/bank` — extend it if needed: it already returns character/bank/silvers).
 - **UI:** sortable table of per-character × town-bank silvers; per-char total column; grand total; filters (character name, account via characters join); currency formatting; "launch ▸" affordance per char (wired in step 5).
 - **Auto-save:** on sign-off, mark done in this file + memory; fresh session resumes at step 2 (resources).
+- **Status:** implemented + committed (`093c97b`) (see "Done since this handoff (2026-08-12, cont.)" above). Next session resumes at **step 2 (resources)**.
 
 **Dev:** gate = `cd backend && npm test && npm run typecheck && npm run lint` + `cd frontend && npm run build`. Run backend (`cd backend && AUTH_TOKENS=... npx tsx src/index.ts`) + frontend (`npm run dev`), paste token in the UI. Kill stale dev servers (:3102/:5173) before redeploying. **Edits to this repo go through bash** (D: path — file tools are confined to the C: workspace). Redeploy recipe + lich module docs: `deploy/V2-DEPLOYMENT.md` (§Lich migration).

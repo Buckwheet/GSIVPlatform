@@ -55,7 +55,7 @@ export class InventoryStore {
   bank(): Record<string, unknown>[] {
     return this.db
       .prepare(
-        `SELECT c.name as character, b.name as bank, s.amount as silvers
+        `SELECT c.name as character, c.account, c.prof, c.level, b.name as bank, s.amount as silvers
          FROM silver s JOIN character c ON s.character_id = c.id JOIN bank b ON s.bank_id = b.id
          ORDER BY c.name, b.id`,
       )

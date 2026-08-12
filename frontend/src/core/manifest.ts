@@ -35,6 +35,7 @@ const LOADERS: Record<string, () => Promise<PageModule>> = {
 export const NAV_COMPONENTS: Record<string, LazyExoticComponent<ComponentType<PageProps>>> = {
   dashboard: lazy(() => import("../pages/dashboard")),
   inventory: lazy(LOADERS.inventory),
+  lookup: lazy(() => import("../pages/lookup")),
   pricing: lazy(LOADERS.pricing),
   gems: lazy(LOADERS.gems),
   healer: lazy(LOADERS.healer),
@@ -58,6 +59,16 @@ const CORE_ITEMS: NavItem[] = [
     icon: "◎",
     requiresScopes: [],
     load: () => import("../pages/dashboard"),
+  },
+  {
+    id: "lookup",
+    path: "/lookup",
+    title: "Lookup",
+    group: "operations",
+    order: 20,
+    icon: "🔎",
+    requiresScopes: ["inventory.read"],
+    load: () => import("../pages/lookup"),
   },
 ];
 

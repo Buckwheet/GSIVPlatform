@@ -77,6 +77,23 @@ describe("inventory module routes", () => {
     expect(body[0].item).toBe("sapphire");
   });
 
+  it("returns bank silvers with character metadata", async () => {
+    const app = makeApp("limited:tok:inventory.read");
+    const res = await app.request("/api/modules/inventory/bank", { headers: { Authorization: "Bearer tok" } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      character: string;
+      bank: string;
+      silvers: number;
+      account: string;
+      prof: string;
+      level: number;
+    }[];
+    expect(body.length).toBeGreaterThanOrEqual(2);
+    const fis = body.find((b) => b.character === "Fisternar" && b.bank === "Ta'Vaalor");
+    expect(fis).toMatchObject({ silvers: 125000, account: "main", prof: "warrior", level: 100 });
+  });
+
   it("exposes inventory routes in the OpenAPI spec", async () => {
     const app = makeApp("admin:tok:*");
     const res = await app.request("/api/spec", { headers: { Authorization: "Bearer tok" } });
