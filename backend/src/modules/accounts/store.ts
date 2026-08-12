@@ -30,8 +30,8 @@ export interface ScanCharacterRow {
   race?: string | null;
   profession?: string | null;
   last_login?: string | null;
-  status?: string;
-  auto_added?: number;
+  status: string;
+  auto_added: number;
   last_seen?: number | null;
 }
 
@@ -181,6 +181,7 @@ export class AccountsStore {
             game_code: c.game_code,
             source: "entry_yaml",
             status: "entry_only",
+            auto_added: 0,
           });
         }
       }
@@ -249,6 +250,19 @@ export class AccountsStore {
     return this.yaml.addCharacter(accountName.toUpperCase(), charName, gameCode || "GS3");
   }
 
+  /** Rows flagged as stale (entry_only) + accounts with auth problems (feed for cleanup). */
+  async stale(): Promise<{ characters: ScanCharacterRow[]; accounts: ScanAccountRow[] }> {
+    const characters = this.db
+      .prepare("SELECT * FROM account_characters WHERE status = 'entry_only' ORDER BY account_name, char_name")
+      .all() as ScanCharacterRow[];
+    const accounts = this.db
+      .prepare(
+        "SELECT * FROM accounts WHERE auth_status IN ('bad_password', 'error', 'decrypt_error') ORDER BY account_name",
+      )
+      .all() as ScanAccountRow[];
+    return { characters, accounts };
+  }
+
   /** Delete an account: entry.yaml + scan db, with per-step results (v1 steps shape). */
   async deleteAccountWithSteps(name: string): Promise<{ steps: { action: string; result: string }[] }> {
     const key = name.toUpperCase();
@@ -282,6 +296,7 @@ export class AccountsStore {
       game_code: c.game_code,
       source: "entry_yaml",
       status: "entry_only",
+      auto_added: 0,
     }));
   }
 

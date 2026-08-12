@@ -24,6 +24,8 @@ const characterSchema = z.object({
   race: z.string().nullable().optional(),
   profession: z.string().nullable().optional(),
   last_login: z.string().nullable().optional(),
+  status: z.string(),
+  auto_added: z.number(),
 });
 
 const okSchema = z.object({ ok: z.boolean() });
@@ -39,6 +41,21 @@ const accountsRoute = createRoute({
         },
       },
       description: "scan results",
+    },
+  },
+});
+
+const staleRoute = createRoute({
+  method: "get",
+  path: "/accounts/stale",
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({ characters: z.array(characterSchema), accounts: z.array(accountSchema) }),
+        },
+      },
+      description: "stale characters + problem accounts",
     },
   },
 });
@@ -224,6 +241,7 @@ export function createAccountsModule(store: AccountsStore, totp: Totp): Module {
     routeScopes: {
       "GET /accounts": ["accounts.read"],
       "GET /accounts/scan/status": ["accounts.read"],
+      "GET /accounts/stale": ["accounts.read"],
       "POST /accounts/scan": ["accounts.write"],
       "POST /accounts/:name/scan": ["accounts.write"],
       "GET /totp/status": ["accounts.read"],
@@ -241,6 +259,7 @@ export function createAccountsModule(store: AccountsStore, totp: Totp): Module {
       const db = (_deps as { db?: CoreDb }).db;
       const eventLog = db ? new EventLog(db) : null;
       router.openapi(accountsRoute, async (c) => c.json(await store.list()));
+      router.openapi(staleRoute, async (c) => c.json(await store.stale()));
       router.openapi(scanStatusRoute, async (c) => c.json({ running: store.scanRunning() }));
       router.openapi(scanAllRoute, async (c) => {
         const res = await store.scanAll();

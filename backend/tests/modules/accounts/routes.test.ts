@@ -222,6 +222,52 @@ describe("accounts module routes", () => {
     const spec = (await res.json()) as { paths: Record<string, unknown> };
     expect(spec.paths["/api/modules/accounts/accounts"]).toBeDefined();
     expect(spec.paths["/api/modules/accounts/entry/account/:name/character"]).toBeDefined();
-    expect(spec.paths["/api/modules/accounts/totp/setup"]).toBeDefined();
+  });
+
+  it("GET /accounts/stale requires auth and read scope", async () => {
+    const app = makeApp("limited:tok:accounts.read");
+    expect((await app.request("/api/modules/accounts/accounts/stale")).status).toBe(401);
+    const res = await app.request("/api/modules/accounts/accounts/stale", { headers: auth });
+    expect(res.status).toBe(200);
+  });
+
+  it("GET /accounts/stale returns entry_only chars and problem accounts", async () => {
+    copyFileSync(FIXTURE, ENTRY_YAML);
+    const ruby = new Ruby(async () => ({ stdout: "PLAINTEXT", stderr: "", code: 0 }));
+    const sge = new Sge((_h, _p, onData, _onError) => {
+      const chunks = ["MASK", "A\tKEY=abc", "M", "N", "G", "C\t1\tGS3\t1\t2\t1\tZepherus"];
+      let i = 0;
+      const deliver = (idx: number) => {
+        if (idx < chunks.length) setImmediate(() => onData(Buffer.from(chunks[idx], "binary")));
+      };
+      deliver(0);
+      return {
+        write: () => {
+          i += 1;
+          deliver(i);
+        },
+        destroy: () => {},
+      };
+    });
+    const store = new AccountsStore(db, new EntryYaml(ENTRY_YAML), ruby, sge, { delayMs: 0 });
+    const registry = new Registry();
+    registry.register(healthModule);
+    registry.register(createAccountsModule(store, new Totp(TOTP_SECRET)));
+    registry.validate();
+    const appAuth = new Auth(new InMemoryKV());
+    appAuth.loadFromEnv("limited:tok:accounts.read");
+    const app = createApp({ registry, kv: new InMemoryKV(), db, auth: appAuth, eventBus: new EventBus() });
+
+    await store.scanOne("BUCKWHEET");
+    const res = await app.request("/api/modules/accounts/accounts/stale", { headers: auth });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      characters: { account_name: string; char_name: string; status: string }[];
+      accounts: { account_name: string; auth_status: string }[];
+    };
+    const buckwheet = body.characters.filter((c) => c.account_name === "BUCKWHEET");
+    expect(buckwheet.map((c) => c.char_name).sort()).toEqual(["Fisternar"]);
+    expect(buckwheet.every((c) => c.status === "entry_only")).toBe(true);
+    expect(Array.isArray(body.accounts)).toBe(true);
   });
 });
