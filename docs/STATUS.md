@@ -130,12 +130,15 @@ as the `pricing` module.
 - **Inventory scheduler deployed** (`b4956c5`): `/api/modules/inventory/{time,schedule,scan/start,scan/status}` + `gsiv-invdb-scan.timer` (daily 03:00 UTC default). **User feedback (pending): scheduler is NOT user-friendly and should NOT live on the Inventory/items page; batch-add by account (15 accounts → threads) needs a better orchestrator.** Redesign is an open item.
 - **NEXT FEATURE (user-approved direction, brainstorming started):** clone invdb's query/collection capability into an **interactive item-search** experience — search everything invdb collects, launch a character when a found item looks like the target (so we can look for it in-game), intelligent display of ALL collected data. Deliver stepwise, user signs off per step: **step 1 = bank balances**, then resources, etc. Auto-save progress at each sign-off so a fresh session can resume.
 
+**Session log — 2026-08-12 (step-5 wrap-up):** step 5 (launch-a-character) shipped (PR #43) + deployed + verified (streams 200 both up, lookup chunk text/javascript). User added a follow-up to-do — **step 5b: one-click bring-online + stream for offline chars** (start the Lich session + open VellumFE from the search result to collect the item).
+
 **Item-search feature — stepwise plan (user signs off each step; progress auto-saved after each):**
 1. **Bank balances** (first step) — DONE 2026-08-12: interactive per-character/per-bank silvers view with filters on the new `/lookup` page.
 2. **Resources** — DONE 2026-08-12: energy/weekly/total/suffused/favor/bonus per char on the `/lookup` Resources tab.
 3. **Tickets + lumnis** — DONE 2026-08-12: ticket balances + lumnis status on the `/lookup` Tickets tab.
 4. **Item search** — DONE 2026-08-12 (PR #41, `7c203b2`, live): invdb's filter grammar cloned over inv.db3 — bare words (name substring), `type=`/`location=` (name or abbr)/`amount>N`/`level>=N` (character level)/`!=`/`/regex/`+`!`/`*` wildcards/`a|b`+`a,b` arrays/`''` empty/`1,000` ints/`limit=N`/`orderby=-col`; case-insensitive `regexp()` registered like invdb; unknown filter/bad regex → 400. `/lookup` Items tab live: expression input + example chips + grammar hint, results table (character, loc abbr, item/noun+container path, type, qty, stack, status, marked, launch ▸ live since step 5), inline errors, 500-row cap notice.
 5. **Launch-a-character** — DONE 2026-08-12 (PR #43, `2a0ca19`, live): `launch ▸` on the Bank + Items tabs opens the char's live VellumFE stream in a new tab when one is online (currently Fisternar, Neleourg — same pattern as the Characters page Watch link, incl. zero-click auto-connect); stream configured but offline → disabled "offline" tooltip; no stream → disabled tooltip pointing at deploy/V2-DEPLOYMENT.md §VellumFE (3-step recipe to add one). Streams from `GET /api/modules/gameview/streams` (scope gameview.read), fetched once on mount, 403-safe. Frontend-only change.
+5b. **One-click bring-online + stream (offline chars)** — TODO (user, 2026-08-12): from a search result whose char is OFFLINE, one click starts the char's Lich session and opens its VellumFE stream so the item can be collected in-game. Backend: `POST` launch endpoint (start `gs4sd-lich@<Char>` via the review-gated Systemd capability when not active, then return the stream URL from `VELLUM_STREAMS`; `lich.write`/`characters.write`). Frontend: `launch ▸` becomes start-then-open for stream-configured chars (needs the write scope; falls back to the current disabled tooltips without it). Chars WITHOUT a configured stream still can't launch — the §VellumFE 3-step provisioning (add `--detachable-client`, `vellum-fe@` unit, `VELLUM_STREAMS` entry) is the prerequisite; automating that is a separate decision.
 6. **Unified display** — intelligent dashboard view of everything invdb collects.
 Separate workstream: **scheduler UX redesign** (move off the Inventory page; batch-by-account orchestrator with per-account threads + job status + retries, ~15 accounts).
 
@@ -156,8 +159,9 @@ Separate workstream: **scheduler UX redesign** (move off the Inventory page; bat
 > through bash; file tools refuse D:). Read docs/STATUS.md §7 first — it has the session log with the full state.
 > Item-search feature on /lookup: steps 1–5 DONE + live (Bank, Resources, Tickets+Lumnis, Items tabs — the Items
 > tab uses the invdb filter grammar: bare words, `type=`/`location=`/`amount>N`/`level>N`/`!=`/`/regex/`/
-> `*` wildcards, `a|b` arrays, `limit=`/`orderby=`; `launch ▸` opens a char's live stream). NEXT = **step 6
-> (unified display — intelligent dashboard view of everything invdb collects)**. Testing rule:
+> `*` wildcards, `a|b` arrays, `limit=`/`orderby=`; `launch ▸` opens a char's live stream). NEXT = **step 5b
+> (one-click bring-online + VellumFE for OFFLINE chars — start the Lich session, open its stream so the item
+> can be collected in-game)**, then step 6 unified display. Testing rule:
 > Fisternar/Neleourg only, Amn off-limits. Server: `ssh -i ~/.ssh/id_ed25519 ubuntu@51.68.235.144` (origin IP;
 > the DNS name is Cloudflare-fronted and unreachable) — runbook at top of /opt/gsiv-platform/backend/.env;
 > frontend deploys MUST copy contents into /opt/gsiv-platform/frontend (Caddy root), never dist/; verify the
