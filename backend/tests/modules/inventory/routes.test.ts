@@ -86,3 +86,139 @@ describe("inventory module routes", () => {
     expect(spec.paths["/api/modules/inventory/search"]).toBeDefined();
   });
 });
+
+describe("inventory scheduler routes", () => {
+  let dir: string;
+  let dbPath: string;
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "gsiv-inv-sched-"));
+    dbPath = join(dir, "inv.db3");
+    const db = buildInvFixture();
+    db.exec(`VACUUM INTO '${dbPath.replace(/'/g, "''")}'`);
+    db.close();
+  });
+
+  const stores: InventoryStore[] = [];
+
+  afterAll(() => {
+    for (const store of stores) store.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function makeApp(tokensEnv: string, exec: (cmd: string) => string) {
+    const store = new InventoryStore(dbPath);
+    stores.push(store);
+    const registry = new Registry();
+    registry.register(healthModule);
+    registry.register(createInventoryModule(store, { exec, scanLogsDir: dir }));
+    registry.validate();
+    const auth = new Auth(new InMemoryKV());
+    auth.loadFromEnv(tokensEnv);
+    const db = new CoreDb(":memory:");
+    return createApp({ registry, kv: new InMemoryKV(), db, auth, eventBus: new EventBus() });
+  }
+
+  const H = { Authorization: "Bearer tok" };
+
+  it("GET /time returns server time as UTC", async () => {
+    const app = makeApp("limited:tok:inventory.read", () => "");
+    const res = await app.request("/api/modules/inventory/time", { headers: H });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { now: string; tz: string };
+    expect(body.tz).toBe("UTC");
+    expect(Number.isNaN(Date.parse(body.now))).toBe(false);
+  });
+
+  it("GET /schedule reads the timer state via exec", async () => {
+    const exec = (cmd: string) => {
+      if (cmd.includes("is-active")) return "active";
+      if (cmd.includes("cat /etc/systemd/system/gsiv-invdb-scan.timer")) return "[Timer]\nOnCalendar=*-*-* 03:15:00\n";
+      if (cmd.includes("NextElapse")) return "Tue 2026-08-12 03:15:00 UTC";
+      return "";
+    };
+    const app = makeApp("limited:tok:inventory.read", exec);
+    const res = await app.request("/api/modules/inventory/schedule", { headers: H });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ enabled: true, time: "03:15" });
+  });
+
+  it("GET /schedule degrades gracefully when systemctl fails", async () => {
+    const app = makeApp("limited:tok:inventory.read", () => {
+      throw new Error("no systemd in tests");
+    });
+    const res = await app.request("/api/modules/inventory/schedule", { headers: H });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { enabled: boolean; error: string | null };
+    expect(body.enabled).toBe(false);
+    expect(body.error).toContain("no systemd");
+  });
+
+  it("PUT /schedule rejects bad time", async () => {
+    const app = makeApp("limited:tok:inventory.write", () => "");
+    const res = await app.request("/api/modules/inventory/schedule", {
+      method: "PUT",
+      headers: { ...H, "Content-Type": "application/json" },
+      body: JSON.stringify({ time: "25:99" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("PUT /schedule writes the timer and enables it", async () => {
+    const cmds: string[] = [];
+    const exec = (cmd: string) => {
+      cmds.push(cmd);
+      if (cmd.includes("is-active")) return "active";
+      if (cmd.includes("NextElapse")) return "Wed 2026-08-13 03:30:00 UTC";
+      return "";
+    };
+    const app = makeApp("limited:tok:inventory.write", exec);
+    const res = await app.request("/api/modules/inventory/schedule", {
+      method: "PUT",
+      headers: { ...H, "Content-Type": "application/json" },
+      body: JSON.stringify({ time: "03:30" }),
+    });
+    expect(res.status).toBe(200);
+    const joined = cmds.join("\n");
+    expect(joined).toContain("sudo cp /tmp/gsiv-invdb-scan.timer /etc/systemd/system/gsiv-invdb-scan.timer");
+    expect(joined).toContain("sudo systemctl daemon-reload");
+    expect(joined).toContain("sudo systemctl enable --now gsiv-invdb-scan.timer");
+  });
+
+  it("requires inventory.write for PUT /schedule and POST /scan/start (403)", async () => {
+    const app = makeApp("limited:tok:inventory.read", () => "");
+    const put = await app.request("/api/modules/inventory/schedule", {
+      method: "PUT",
+      headers: { ...H, "Content-Type": "application/json" },
+      body: JSON.stringify({ time: "03:00" }),
+    });
+    expect(put.status).toBe(403);
+    const start = await app.request("/api/modules/inventory/scan/start", { method: "POST", headers: H });
+    expect(start.status).toBe(403);
+  });
+
+  it("POST /scan/start triggers the scan-all script", async () => {
+    const cmds: string[] = [];
+    const app = makeApp("limited:tok:inventory.write", (cmd) => {
+      cmds.push(cmd);
+      return "";
+    });
+    const res = await app.request("/api/modules/inventory/scan/start", { method: "POST", headers: H });
+    expect(res.status).toBe(200);
+    expect(cmds.some((c) => c.includes("invdb-scan-all.sh"))).toBe(true);
+  });
+
+  it("GET /scan/status reports running + counts", async () => {
+    const exec = (cmd: string) => {
+      if (cmd.includes("pgrep -f invdb-parallel")) return "yes";
+      return "";
+    };
+    const app = makeApp("limited:tok:inventory.read", exec);
+    const res = await app.request("/api/modules/inventory/scan/status", { headers: H });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { running: boolean; chars: number; items: number };
+    expect(body.running).toBe(true);
+    expect(body.chars).toBe(2);
+    expect(body.items).toBe(5);
+  });
+});

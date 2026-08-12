@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
+import { Button, Input, Table, useToast } from "../../components";
 import { api } from "../../core/api";
 import type { AuthState } from "../../core/auth";
-import { Input, Button, Table, useToast } from "../../components";
+import { InventoryScheduler } from "./Scheduler";
 
 interface InvRow {
   id?: string | number;
@@ -57,9 +58,11 @@ export default function Inventory({ auth }: { auth: AuthState }) {
       <header className="page-header" style={{ flexDirection: "column" }}>
         <h1 className="page-header-title">Inventory</h1>
         <p className="muted" style={{ margin: "var(--space-1) 0 0 0" }}>
-          Read-only view of the shared invdb (no write affordances).
+          Read-only view of the shared invdb.
         </p>
       </header>
+
+      <InventoryScheduler auth={auth} />
 
       <div className="toolbar" style={{ maxWidth: "420px", marginBottom: "var(--space-4)" }}>
         <Input
@@ -76,7 +79,16 @@ export default function Inventory({ auth }: { auth: AuthState }) {
       </div>
 
       {error && (
-        <div style={{ marginBottom: "var(--space-4)", padding: "var(--space-3)", background: "var(--tint-bad)", border: "1px solid var(--bad)", borderRadius: "var(--radius-sm)", color: "var(--text-strong)" }}>
+        <div
+          style={{
+            marginBottom: "var(--space-4)",
+            padding: "var(--space-3)",
+            background: "var(--tint-bad)",
+            border: "1px solid var(--bad)",
+            borderRadius: "var(--radius-sm)",
+            color: "var(--text-strong)",
+          }}
+        >
           <strong>Error:</strong> {error}
         </div>
       )}
