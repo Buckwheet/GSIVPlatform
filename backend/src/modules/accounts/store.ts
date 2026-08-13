@@ -23,6 +23,7 @@ export interface ScanAccountRow {
   store_balance: number | null;
   store_reward_next: string | null;
   last_scan: number;
+  no_active_chars: number;
 }
 
 export interface ScanCharacterRow {
@@ -38,6 +39,7 @@ export interface ScanCharacterRow {
   status: string;
   auto_added: number;
   last_seen?: number | null;
+  transferred_to?: string | null;
 }
 
 const MIGRATIONS = [
@@ -64,6 +66,7 @@ const MIGRATIONS = [
   `CREATE INDEX IF NOT EXISTS idx_acct_chars ON account_characters(account_name)`,
   `ALTER TABLE account_characters ADD COLUMN status TEXT NOT NULL DEFAULT 'active'`,
   `ALTER TABLE account_characters ADD COLUMN auto_added INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE accounts ADD COLUMN no_active_chars INTEGER NOT NULL DEFAULT 0`,
 ];
 
 export class AccountsStore {
@@ -77,7 +80,11 @@ export class AccountsStore {
     private ruby: Ruby,
     private sge: Sge,
     private invDb: InvDbCleaner,
-    private opts: { delayMs?: number } = {},
+    private opts: {
+      delayMs?: number;
+      emit?: (type: string, payload: unknown) => void;
+      log?: (type: string, char: string | null, detail: string, source: string) => void;
+    } = {},
   ) {
     db.migrate("accounts", MIGRATIONS);
     this.db = db.get();
@@ -158,7 +165,7 @@ export class AccountsStore {
     if (!decrypted.ok) {
       authStatus = "decrypt_error";
       authError = decrypted.error;
-      this.saveScan(accountName, authStatus, authError, this.yamlOnlyChars(accountName, chars));
+      this.saveScan(accountName, authStatus, authError, this.yamlOnlyChars(accountName, chars), 0);
       return { ok: true, authStatus, authError };
     }
 
@@ -209,11 +216,12 @@ export class AccountsStore {
     } catch (err) {
       authStatus = (err as Error).message === "invalid_password" ? "bad_password" : "error";
       authError = (err as Error).message;
-      this.saveScan(accountName, authStatus, authError, this.yamlOnlyChars(accountName, chars));
+      this.saveScan(accountName, authStatus, authError, this.yamlOnlyChars(accountName, chars), 0);
       return { ok: true, authStatus, authError };
     }
 
-    this.saveScan(accountName, authStatus, authError, characters);
+    const noActiveChars = authStatus === "ok" && characters.every((c) => c.status !== "active") ? 1 : 0;
+    this.saveScan(accountName, authStatus, authError, characters, noActiveChars);
     return { ok: true, authStatus, authError };
   }
 
@@ -312,9 +320,16 @@ export class AccountsStore {
 
   /** Rows flagged as stale (entry_only) + accounts with auth problems (feed for cleanup). */
   async stale(): Promise<{ characters: ScanCharacterRow[]; accounts: ScanAccountRow[] }> {
-    const characters = this.db
+    const rows = this.db
       .prepare("SELECT * FROM account_characters WHERE status = 'entry_only' ORDER BY account_name, char_name")
       .all() as ScanCharacterRow[];
+    const activeElsewhere = this.db.prepare(
+      "SELECT account_name FROM account_characters WHERE LOWER(char_name) = LOWER(?) AND account_name != ? AND status = 'active' LIMIT 1",
+    );
+    const characters = rows.map((c) => {
+      const other = activeElsewhere.get(c.char_name, c.account_name) as { account_name?: string } | undefined;
+      return { ...c, transferred_to: other?.account_name ?? null };
+    });
     const accounts = this.db
       .prepare(
         "SELECT * FROM accounts WHERE auth_status IN ('bad_password', 'error', 'decrypt_error') ORDER BY account_name",
@@ -446,14 +461,26 @@ export class AccountsStore {
     authStatus: string,
     authError: string | null,
     characters: ScanCharacterRow[],
+    noActiveChars: number,
   ): void {
+    const prev = this.db.prepare("SELECT no_active_chars FROM accounts WHERE account_name = ?").get(accountName) as
+      | { no_active_chars?: number }
+      | undefined;
+    const wasFlagged = (prev?.no_active_chars ?? 0) === 1;
     this.db
       .prepare(
-        `INSERT INTO accounts (account_name, auth_status, auth_error, store_balance, store_reward_next, last_scan)
-         VALUES (?, ?, ?, NULL, NULL, ?)
-         ON CONFLICT(account_name) DO UPDATE SET auth_status=excluded.auth_status, auth_error=excluded.auth_error, last_scan=excluded.last_scan`,
+        `INSERT INTO accounts (account_name, auth_status, auth_error, no_active_chars, store_balance, store_reward_next, last_scan)
+         VALUES (?, ?, ?, ?, NULL, NULL, ?)
+         ON CONFLICT(account_name) DO UPDATE SET auth_status=excluded.auth_status, auth_error=excluded.auth_error, no_active_chars=excluded.no_active_chars, last_scan=excluded.last_scan`,
       )
-      .run(accountName, authStatus, authError, Date.now());
+      .run(accountName, authStatus, authError, noActiveChars, Date.now());
+    if (!wasFlagged && noActiveChars === 1) {
+      this.opts.emit?.("no_chars_alert", {
+        account: accountName,
+        message: `${accountName}: auth ok but no active characters`,
+      });
+      this.opts.log?.("no_active_chars", null, `${accountName}: auth ok but no active characters`, "roster");
+    }
     const now = Date.now();
     const find = this.db.prepare(
       "SELECT last_seen FROM account_characters WHERE account_name = ? AND LOWER(char_name) = LOWER(?)",

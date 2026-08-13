@@ -67,11 +67,21 @@ class FakeInvDb implements InvDbCleaner {
 
 describe("AccountsStore", () => {
   function makeStore(
-    overrides: { yaml?: EntryYaml; ruby?: Ruby; sge?: Sge; invDb?: InvDbCleaner; delayMs?: number } = {},
+    overrides: {
+      yaml?: EntryYaml;
+      ruby?: Ruby;
+      sge?: Sge;
+      invDb?: InvDbCleaner;
+      delayMs?: number;
+      emit?: (type: string, payload: unknown) => void;
+      log?: (type: string, char: string | null, detail: string, source: string) => void;
+    } = {},
   ) {
     const db = new CoreDb(":memory:");
     const yamlPath = join(TMP, `entry-${++storeYamlCounter}.yaml`);
     copyFileSync(FIXTURE, yamlPath);
+    const emitted: { type: string; payload: unknown }[] = [];
+    const logged: string[] = [];
     const store = new AccountsStore(
       db,
       overrides.yaml ?? new EntryYaml(yamlPath),
@@ -80,9 +90,11 @@ describe("AccountsStore", () => {
       overrides.invDb ?? new FakeInvDb(),
       {
         delayMs: overrides.delayMs ?? 0,
+        emit: overrides.emit ?? ((type, payload) => emitted.push({ type, payload })),
+        log: overrides.log ?? ((type, _c, detail) => logged.push(`${type}:${detail}`)),
       },
     );
-    return { db, store };
+    return { db, store, emitted, logged };
   }
 
   it("migrates the scan tables; list() is empty on a fresh db", async () => {
@@ -409,6 +421,70 @@ describe("AccountsStore", () => {
         { char: "Zepherus", result: "timeout", error: "not online" },
       ]);
       expect(res[0]).toMatchObject({ code: "transient" });
+    });
+  });
+
+  describe("no_active_chars flag + alert", () => {
+    it("flags the account when auth ok but SGE has no active chars", async () => {
+      const { store, emitted, logged } = makeStore({ sge: sgeOk([]) });
+      await store.refresh("BUCKWHEET");
+      const list = await store.list();
+      expect(list.accounts[0].no_active_chars).toBe(1);
+      expect(emitted.some((e) => e.type === "no_chars_alert")).toBe(true);
+      expect(logged.some((l) => l.startsWith("no_active_chars:"))).toBe(true);
+    });
+
+    it("clears the flag when the account has active chars", async () => {
+      const { store } = makeStore({ sge: sgeOk([{ slot: "1", name: "Zepherus" }]) });
+      await store.refresh("BUCKWHEET");
+      const list = await store.list();
+      expect(list.accounts[0].no_active_chars).toBe(0);
+    });
+
+    it("does not flag on an auth error", async () => {
+      const { store } = makeStore({ sge: sgeError(new Error("invalid_password")) });
+      await store.refresh("BUCKWHEET");
+      const list = await store.list();
+      expect(list.accounts[0].no_active_chars).toBe(0);
+    });
+
+    it("alerts only on the 0->1 transition, not on re-flag", async () => {
+      const { store, emitted, logged } = makeStore({ sge: sgeOk([]) });
+      await store.refresh("BUCKWHEET");
+      await store.refresh("BUCKWHEET");
+      expect(emitted.filter((e) => e.type === "no_chars_alert")).toHaveLength(1);
+      expect(logged.filter((l) => l.startsWith("no_active_chars:"))).toHaveLength(1);
+    });
+  });
+
+  describe("transfer detection in stale()", () => {
+    it("sets transferred_to when an entry_only char is active under another account", async () => {
+      const { db, store } = makeStore();
+      const ins = db.get();
+      ins
+        .prepare(
+          "INSERT INTO account_characters (account_name, char_name, status) VALUES ('BUCKWHEET','Fisternar','entry_only')",
+        )
+        .run();
+      ins
+        .prepare("INSERT INTO account_characters (account_name, char_name, status) VALUES ('ALT','Fisternar','active')")
+        .run();
+      const { characters } = await store.stale();
+      const fisternar = characters.find((c) => c.account_name === "BUCKWHEET" && c.char_name === "Fisternar");
+      expect(fisternar?.transferred_to).toBe("ALT");
+    });
+
+    it("leaves transferred_to null when the gone char is not active elsewhere", async () => {
+      const { db, store } = makeStore();
+      const ins = db.get();
+      ins
+        .prepare(
+          "INSERT INTO account_characters (account_name, char_name, status) VALUES ('BUCKWHEET','Zepherus','entry_only')",
+        )
+        .run();
+      const { characters } = await store.stale();
+      const zepherus = characters.find((c) => c.char_name === "Zepherus");
+      expect(zepherus?.transferred_to).toBeNull();
     });
   });
 });

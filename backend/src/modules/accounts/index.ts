@@ -12,6 +12,7 @@ const accountSchema = z.object({
   store_balance: z.number().nullable(),
   store_reward_next: z.string().nullable(),
   last_scan: z.number(),
+  no_active_chars: z.number(),
 });
 
 const characterSchema = z.object({
@@ -26,6 +27,7 @@ const characterSchema = z.object({
   last_login: z.string().nullable().optional(),
   status: z.string(),
   auto_added: z.number(),
+  transferred_to: z.string().nullable().optional(),
 });
 
 const okSchema = z.object({ ok: z.boolean() });

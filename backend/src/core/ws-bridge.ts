@@ -31,6 +31,7 @@ const EVENT_TYPES = [
   "sale_update",
   "scan_update",
   "scan_alert",
+  "no_chars_alert",
 ] as const;
 
 export function createWsBridge(server: ServerType, auth: Auth, eventBus: EventBus): () => void {
