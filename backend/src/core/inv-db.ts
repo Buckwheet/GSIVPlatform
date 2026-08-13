@@ -47,6 +47,23 @@ export class InvDb implements InvDbCleaner {
     return this.dbPath;
   }
 
+  /**
+   * Latest `character.timestamp` for a char (case-insensitive), or null when
+   * the char has no row. Used by the scan runner to detect scan completion
+   * (a full re-scan advances the timestamp; a first scan creates the row).
+   */
+  charTimestamp(name: string): number | null {
+    try {
+      const db = this.open();
+      const row = db.prepare("SELECT timestamp FROM character WHERE LOWER(name) = LOWER(?)").get(name) as
+        | { timestamp: number | null }
+        | undefined;
+      return row?.timestamp ?? null;
+    } catch {
+      return null; // missing table/DB during a scan must not crash the runner
+    }
+  }
+
   private open(): Database.Database {
     if (this.db) return this.db;
     if (this.openError) throw new InvDbError(this.openError);

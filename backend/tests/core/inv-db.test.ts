@@ -105,3 +105,30 @@ describe("InvDb", () => {
     inv.close();
   });
 });
+
+describe("InvDb.charTimestamp", () => {
+  it("returns null when the char has no row", () => {
+    const dir = mkdtempSync(join(tmpdir(), "invdb-ts-"));
+    const path = join(dir, "inv.db3");
+    const db = new Database(path);
+    db.exec("CREATE TABLE character (id INTEGER PRIMARY KEY, name TEXT, timestamp INTEGER)");
+    db.close();
+    const inv = new InvDb(path);
+    expect(inv.charTimestamp("Fisternar")).toBeNull();
+    inv.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("returns the latest timestamp for a char (case-insensitive)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "invdb-ts-"));
+    const path = join(dir, "inv.db3");
+    const db = new Database(path);
+    db.exec("CREATE TABLE character (id INTEGER PRIMARY KEY, name TEXT, timestamp INTEGER)");
+    db.prepare("INSERT INTO character (name, timestamp) VALUES (?, ?)").run("Fisternar", 1700000000);
+    db.close();
+    const inv = new InvDb(path);
+    expect(inv.charTimestamp("fisternar")).toBe(1700000000);
+    inv.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
