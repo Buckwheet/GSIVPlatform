@@ -193,10 +193,14 @@ Apious, Pace, Rhezikk, Tahreal, Thadior...). Stale incl. **Scorpa (LWELLS5500)**
 > replaced the bash scheduler — 5 concurrent accounts, full re-scan (completion = inv.db3 timestamp advance),
 > manual retry, `scan_alert` toast + EventLog. Backend `core/scan-runner.ts` + `modules/scans`; timer
 > `gsiv-invdb-scan.service` → `/opt/gsiv-platform/scripts/gsiv-scan.sh` (machine token + scans.read,scans.write).
-> 345 tests. LOOKUP (steps 1–6) + ROSTER SYNC (weekly SGE poll, stale flagging) also live from 2026-08-12.
+> 351 tests. LOOKUP (steps 1–6) + ROSTER SYNC (weekly SGE poll, stale flagging) also live from 2026-08-12.
 > **CHAR-FAILURE DISAMBIGUATION LIVE (2026-08-13, PR #49, squash a0f8ee1):** scan failures now show why (auth vs
 > disabled vs transient) via a fresh SGE re-check — `AccountsStore.refreshAndClassify`, `scan_chars` table, per-char reasons
 > on /scans; /accounts reflects the write-back. Deployed + live-smoked on Fisternar/Neleourg (scan job #4, both done).
+> **NO-ACTIVE-CHARACTERS ALERT LIVE (2026-08-13, PR #50, squash 144b66b):** accounts with `auth ok` but zero
+> active SGE chars get flagged `no_active_chars=1`, re-alerting (WS toast + EventLog) on EVERY detection + a "No active
+> characters — cancel billing?" banner on /accounts; gone chars get a "possibly transferred to X" note. Cleanup still
+> manual ("Clean up stale" — Bilz + 17 dead accts / 30 stale chars still pending).
 > **Still parked:** (1) stale-char cleanup — user self-service, click "Clean up stale" on /accounts (17 dead +
 > 30 stale chars); (2) roster-sync Phase B (play.net inactive-char scrape); (3) optional ebounty_tracker port. **Testing rule:** Fisternar/Neleourg only, Amn off-limits. **Server:** `ssh -i ~/.ssh/id_ed25519
 > ubuntu@51.68.235.144` (origin IP; DNS name is Cloudflare-fronted) — runbook at top of server .env; frontend
