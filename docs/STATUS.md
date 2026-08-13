@@ -183,22 +183,18 @@ Apious, Pace, Rhezikk, Tahreal, Thadior...). Stale incl. **Scorpa (LWELLS5500)**
 
 **Restart prompt (copy-paste into a new session when resuming):**
 
-> Continue GSIVPlatform work in `D:\Code Projects\GSIVPlatform` (repo outside the C: workspace — all edits
-> through bash; file tools refuse D:). Read docs/STATUS.md §7 first — it has the session log with the full state.
-> LOOKUP page: steps 1–6 DONE + live — Overview (default dashboard tab), Bank, Resources, Tickets+Lumnis, Items
-> (invdb filter grammar: bare words, `type=`/`location=`/`amount>N`/`level>N`/`!=`/`/regex/`/`*` wildcards,
-> `a|b` arrays, `limit=`/`orderby=`; `launch ▸` start-then-open for stream-configured chars with a write scope).
-> ROSTER SYNC DONE + live (2026-08-12): v2 accounts module = weekly SGE poll (verify auth, auto-add new chars to
-> entry.yaml, flag stale) — per-row upsert (status active|entry_only, auto_added, preserved last_seen), GET
-> /api/modules/accounts/accounts/stale, Accounts page stale banner; server entry.yaml = 36 accounts (migrated
-> from local C:\lich5, backup entry.yaml.bak-roster-migrate-20260812-215148); gsiv-roster-scan.timer Mon 03:30
-> UTC; machine token has accounts.read,accounts.write. First backfill: 19 ok / 8 error / 9 bad_password; 45
-> chars auto-added; 30 stale (Scorpa, Mahres, Bilz...). STALE-CHAR CLEANUP SHIPPED (2026-08-12): POST /accounts/stale/cleanup (accounts.write, TOTP-gated, dry_run) + Accounts page 'Clean up stale' button live; TOTP migrated from dashboard.phylactery (v1 secret → v2, same otpauth). NEXT = run 'Clean up stale' (user self-service) to drop the 17 dead accounts + 30 stale chars, then verify /accounts, /lookup Overview, /characters; then **scheduler UX redesign**. Testing rule:
-> Fisternar/Neleourg only, Amn off-limits. Server: `ssh -i ~/.ssh/id_ed25519 ubuntu@51.68.235.144` (origin IP;
-> the DNS name is Cloudflare-fronted and unreachable) — runbook at top of /opt/gsiv-platform/backend/.env;
-> frontend deploys MUST copy contents into /opt/gsiv-platform/frontend (Caddy root), never dist/; verify the
-> public bundle is text/javascript (CF cache poisoning gotcha). Workflow: branch → `gh pr merge`. Parked:
-> **scheduler UX redesign** (batch-by-account orchestrator, move off the Inventory page), **roster-sync Phase B**
-> (play.net inactive-char scrape — deleted chars with level/prof). Recall memories:
-> gsivplatform-weekly-roster-sync-live-... , next-feature-interactive-... ,
+> Continue GSIVPlatform work in `D:Code ProjectsGSIVPlatform` (repo outside the C: workspace — all edits
+> through bash; file tools refuse D:). Read docs/STATUS.md §7 first for the full session log.
+> **SCAN ORCHESTRATOR DONE + live (2026-08-13, PR #48, main):** new `/scans` page + TypeScript orchestrator
+> replaced the bash scheduler — 5 concurrent accounts, full re-scan (completion = inv.db3 timestamp advance),
+> manual retry, `scan_alert` toast + EventLog. Backend `core/scan-runner.ts` + `modules/scans`; timer
+> `gsiv-invdb-scan.service` → `/opt/gsiv-platform/scripts/gsiv-scan.sh` (machine token + scans.read,scans.write).
+> 334 tests. LOOKUP (steps 1–6) + ROSTER SYNC (weekly SGE poll, stale flagging) also live from 2026-08-12.
+> **Still parked:** (1) stale-char cleanup — user self-service, click "Clean up stale" on /accounts (17 dead +
+> 30 stale chars); (2) SGE-based char-failure disambiguation (why a char failed: auth vs disabled — cross-reference
+> accounts.auth_status/auth_error + SGE logs); (3) roster-sync Phase B (play.net inactive-char scrape); (4) optional
+> ebounty_tracker port. **Testing rule:** Fisternar/Neleourg only, Amn off-limits. **Server:** `ssh -i ~/.ssh/id_ed25519
+> ubuntu@51.68.235.144` (origin IP; DNS name is Cloudflare-fronted) — runbook at top of server .env; frontend
+> deploys MUST copy contents into /opt/gsiv-platform/frontend (Caddy root), verify public bundle is text/javascript.
+> Workflow: branch → `gh pr merge`. Recall memories: gsivplatform-weekly-roster-sync-... , next-feature-interactive-... ,
 > gsiv-server-ssh-origin-ip-... , invdb-lic-patches-... .
