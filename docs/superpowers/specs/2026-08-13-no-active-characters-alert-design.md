@@ -50,7 +50,7 @@ Today the roster sync (SGE `listCharacters` per account) already distinguishes
 |---|---|
 | Flag storage | New `accounts.no_active_chars` column (0/1) |
 | Flag set when | `auth ok` AND SGE active-char list is empty |
-| Alert trigger | Transition `0 -> 1` only (no daily re-alert spam) |
+| Alert trigger | Each detection (re-alert while the account stays empty) |
 | Alert surface | WS `no_chars_alert` toast + EventLog + `/accounts` banner |
 | Cleanup | Unchanged — manual "Clean up stale" (full removal) |
 | Transfer detection | Cross-reference `account_characters`: entry_only char name `active` under another account |
@@ -74,7 +74,7 @@ new column) added to the `GET /accounts/stale` response.
 - **`refresh()`**: compute `noActiveChars = (authStatus === "ok" && sgeChars.length === 0) ? 1 : 0`
   (always `0` on the decrypt-error / SGE-error paths), and pass it to `saveScan`.
 - **`saveScan(…, noActiveChars)`**: persist the column in the accounts upsert;
-  read the previous value first and, on a `0 -> 1` transition, emit
+  emit on each detection while the account stays empty
   `no_chars_alert { account, message }` and log `no_active_chars` to EventLog.
 - **`stale()`**: for each `entry_only` char, look up whether the same char name
   (case-insensitive) is `active` under a different account; if so add
@@ -107,11 +107,10 @@ new column) added to the `GET /accounts/stale` response.
 
 ## 8. Alert cadence
 
-- The alert fires once per account on the `0 -> 1` transition (first detection),
-  whether via the daily scan's failure re-check or the weekly roster sync. It
-  does not re-fire while the account stays flagged.
-- Clearing (an account gains an active char again, or auth breaks) resets the
-  flag to `0`; a later empty state would alert again.
+- The alert fires on **each** detection while the account stays empty (daily scan
+  failure re-check and/or weekly roster sync), so the operator is re-reminded until
+  they act. Clearing (an account gains an active char again, or auth breaks) resets
+  the flag to `0` and stops the alerts.
 
 ## 9. Testing
 
