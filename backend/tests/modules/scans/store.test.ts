@@ -112,7 +112,7 @@ describe("ScansStore", () => {
     const { store } = makeStore({ results: { Fisternar: "failed", Zepherus: "failed" } });
     store.start();
     await store.whenIdle();
-    const retry = store.retry(store.currentJob()!.id);
+    const retry = store.retry(store.currentJob()?.id ?? 0);
     expect(retry.ok).toBe(true);
     expect(retry.totalAccounts).toBe(1); // only BUCKWHEET
     await store.whenIdle();

@@ -242,7 +242,8 @@ export class ScansStore {
     const queue = [...(this.current?.accounts ?? [])];
     const next = async (): Promise<void> => {
       while (queue.length > 0) {
-        const acct = queue.shift()!;
+        const acct = queue.shift();
+        if (!acct) return;
         acct.status = "running";
         acct.startedAt = this.now();
         this.emit("scan_update", this.snapshot());
@@ -273,7 +274,8 @@ export class ScansStore {
   }
 
   private persistAccount(acct: ScanAccountState): void {
-    const jobId = this.current!.id;
+    const jobId = this.current?.id;
+    if (jobId == null) return;
     this.db
       .prepare(
         `INSERT INTO scan_accounts (job_id, account_name, status, chars_total, chars_done, chars_failed, error, started_at, finished_at)
