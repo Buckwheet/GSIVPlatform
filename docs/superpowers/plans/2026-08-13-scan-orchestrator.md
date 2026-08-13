@@ -375,7 +375,7 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { CoreDb } from "../../../src/core/db.js";
 import { EntryYaml } from "../../../src/core/entry-yaml.js";
-import type { ScanCharResult } from "../../../src/core/scan-runner.js";
+import type { ScanCharResult, ScanStage } from "../../../src/core/scan-runner.js";
 import { ScansStore } from "../../../src/modules/scans/store.js";
 
 const FIXTURE = join(import.meta.dirname, "..", "..", "fixtures", "entry-yaml.fixture.yaml");
@@ -402,7 +402,7 @@ function makeStore(opts: {
   const runner = {
     started,
     maxActive: () => maxActive,
-    async scanChar(char: string, onStage?: (..._args: unknown[]) => void): Promise<ScanCharResult> {
+    async scanChar(char: string, onStage?: (stage: ScanStage, detail: string) => void): Promise<ScanCharResult> {
       active += 1;
       maxActive = Math.max(maxActive, active);
       started.push(char);
