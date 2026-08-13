@@ -35,6 +35,17 @@
       ]
     },
     {
+      "id": "scans",
+      "path": "/scans",
+      "title": "Scans",
+      "group": "operations",
+      "order": 30,
+      "icon": "📡",
+      "requiresScopes": [
+        "scans.read"
+      ]
+    },
+    {
       "id": "gems",
       "path": "/jars",
       "title": "Jars",
@@ -131,6 +142,8 @@
     "pricing.read",
     "pricing.write",
     "pricing.scrape",
+    "scans.read",
+    "scans.write",
     "yourshops.read",
     "yourshops.write",
     "gems.read",
