@@ -133,6 +133,7 @@ const scansStore = new ScansStore(
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean),
+    classifier: accountsStore,
   },
 );
 registry.register(createScansModule(scansStore));
