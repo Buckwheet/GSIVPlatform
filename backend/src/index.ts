@@ -106,7 +106,10 @@ registry.register(
     systemd: new Systemd(),
   }),
 );
-const accountsStore = new AccountsStore(db, new EntryYaml(), new Ruby(), new Sge(), new InvDb());
+const accountsStore = new AccountsStore(db, new EntryYaml(), new Ruby(), new Sge(), new InvDb(), {
+  emit: (type, payload) => eventBus.emit(type, payload),
+  log: (type, char, detail, source) => eventLog.log(type, char, detail, source),
+});
 const totp = new Totp();
 registry.register(createAccountsModule(accountsStore, totp));
 
