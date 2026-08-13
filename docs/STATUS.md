@@ -4,8 +4,8 @@
 > single source of truth for where the project stands, what to do next, and
 > how to work here.
 
-**Updated:** 2026-08-11 EOD — Phase A + B complete, **Phase C live** (9 modules + frontend on
-`gsiv.phylactery.ovh`), pricing imported, hardening + full security audit done.
+**Updated:** 2026-08-13 — **scan orchestrator + /scans page live** (PR #48): TypeScript orchestrator
+(5 concurrent accounts, full re-scan, manual retry, scan_alert alerting) replaced the bash scheduler.
 See §7 for the session handoff.
 
 ---
@@ -178,6 +178,8 @@ Apious, Pace, Rhezikk, Tahreal, Thadior...). Stale incl. **Scorpa (LWELLS5500)**
 **Session log — 2026-08-12 (stale-char cleanup shipped + TOTP migrated):** built the stale-char deletion workstream (PR #47, squash `2dbfd4b`). New review-gated capability `core/inv-db.ts` (`InvDb` — the platform's only write path to inv.db3: backup-then-delete, explicit child-row cascade, generic errors). `AccountsStore.cleanupStale(dryRun)` consumes `GET /accounts/stale` and drops dead accounts (17) + entry_only chars (30) from entry.yaml + gsiv.db + inv.db3. `POST /accounts/stale/cleanup` (accounts.write, TOTP-gated, `dry_run` param). Accounts page gains a TOTP-gated "Clean up stale" action. 326 backend tests green; security review clean (dry_run preview added for the transient-`error` concern). Deployed + verified live (endpoint in spec, 403 w/o TOTP, 401 w/o auth, stale counts 30/17, frontend bundle `text/javascript`). **TOTP migrated from retired dashboard.phylactery**: v1 `/opt/gs4sd/data/totp_secret` → v2 `/opt/gsiv-platform/backend/data/totp_secret` (identical otpauth SHA1/6/30 params — existing authenticator entry works unchanged; verified `valid:true`). **Pending (user self-service):** click "Clean up stale" on /accounts with a fresh code → drops 17 dead accounts + 30 stale chars; then verify /accounts, /lookup Overview, /characters no longer list them. Then scheduler UX redesign.
 
 **Leftover (flag, not acted on):** orphaned `fishbyte.service` (`node dist/index.js` PID 782678, port 3101, started Jul 28) still runs on the server — pre-existing, separate from gsiv-platform (3102).
+
+**Session log — 2026-08-13 (scan orchestrator + scheduler UX redesign shipped, PR #48):** replaced the bash-driven InvDB scheduler (`invdb-scan-all.sh`/`invdb-parallel.sh`) with a TypeScript orchestrator. New review-gated capability `core/scan-runner.ts` (one char's scan cycle: systemd start/stop, lich `;invdb`/`;invdb tickets`, inv.db3 timestamp-advance completion — all injected) + `InvDb.charTimestamp`. New `modules/scans` (`ScansStore`: job model, **5 concurrent accounts**, chars sequential per account, full re-scan, gsiv.db persistence, manual retry; routes `/api/modules/scans/{time,schedule,scan,scan/status,scan/history,scan/targets,scan/:jobId/retry}`; `scan_update`/`scan_alert` WS events). New `/scans` page (live animated per-account progress + history + retry) + global `scan_alert` toast + EventLog row on failure. Removed the Inventory scheduler (`inventory.write` scope dropped). Timer repointed: `gsiv-invdb-scan.service` → `/opt/gsiv-platform/scripts/gsiv-scan.sh` + `/etc/gsiv-scan.env` (0600); machine token gained `scans.read,scans.write`. 334 backend tests; deployed + live-smoked (CGROSS/Fisternar + JAYCELIA/Neleourg both done ~22s; timer force-run observed 5 concurrent accounts). Spec `docs/superpowers/specs/2026-08-13-scan-orchestrator-design.md`, plan `docs/superpowers/plans/2026-08-13-scan-orchestrator.md`. **Deferred:** SGE-based char-failure disambiguation (auth vs disabled char). **Still pending (user):** "Clean up stale" on /accounts (17 dead + 30 stale chars).
 
 **Restart prompt (copy-paste into a new session when resuming):**
 
