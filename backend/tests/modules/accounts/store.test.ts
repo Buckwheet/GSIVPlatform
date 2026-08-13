@@ -448,12 +448,12 @@ describe("AccountsStore", () => {
       expect(list.accounts[0].no_active_chars).toBe(0);
     });
 
-    it("alerts only on the 0->1 transition, not on re-flag", async () => {
+    it("re-alerts on each detection while the account stays empty", async () => {
       const { store, emitted, logged } = makeStore({ sge: sgeOk([]) });
       await store.refresh("BUCKWHEET");
       await store.refresh("BUCKWHEET");
-      expect(emitted.filter((e) => e.type === "no_chars_alert")).toHaveLength(1);
-      expect(logged.filter((l) => l.startsWith("no_active_chars:"))).toHaveLength(1);
+      expect(emitted.filter((e) => e.type === "no_chars_alert")).toHaveLength(2);
+      expect(logged.filter((l) => l.startsWith("no_active_chars:"))).toHaveLength(2);
     });
   });
 

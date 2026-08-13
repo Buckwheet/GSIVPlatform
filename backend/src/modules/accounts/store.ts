@@ -463,10 +463,6 @@ export class AccountsStore {
     characters: ScanCharacterRow[],
     noActiveChars: number,
   ): void {
-    const prev = this.db.prepare("SELECT no_active_chars FROM accounts WHERE account_name = ?").get(accountName) as
-      | { no_active_chars?: number }
-      | undefined;
-    const wasFlagged = (prev?.no_active_chars ?? 0) === 1;
     this.db
       .prepare(
         `INSERT INTO accounts (account_name, auth_status, auth_error, no_active_chars, store_balance, store_reward_next, last_scan)
@@ -474,7 +470,7 @@ export class AccountsStore {
          ON CONFLICT(account_name) DO UPDATE SET auth_status=excluded.auth_status, auth_error=excluded.auth_error, no_active_chars=excluded.no_active_chars, last_scan=excluded.last_scan`,
       )
       .run(accountName, authStatus, authError, noActiveChars, Date.now());
-    if (!wasFlagged && noActiveChars === 1) {
+    if (noActiveChars === 1) {
       this.opts.emit?.("no_chars_alert", {
         account: accountName,
         message: `${accountName}: auth ok but no active characters`,
