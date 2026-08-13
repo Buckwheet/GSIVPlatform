@@ -175,6 +175,10 @@ Apious, Pace, Rhezikk, Tahreal, Thadior...). Stale incl. **Scorpa (LWELLS5500)**
 
 **Dev:** gate = `cd backend && npm test && npm run typecheck && npm run lint` + `cd frontend && npm run build`. Run backend (`cd backend && AUTH_TOKENS=... npx tsx src/index.ts`) + frontend (`npm run dev`), paste token in the UI. Kill stale dev servers (:3102/:5173) before redeploying. **Edits to this repo go through bash** (D: path — file tools are confined to the C: workspace). Redeploy recipe + lich module docs: `deploy/V2-DEPLOYMENT.md` (§Lich migration).
 
+**Session log — 2026-08-12 (stale-char cleanup shipped + TOTP migrated):** built the stale-char deletion workstream (PR #47, squash `2dbfd4b`). New review-gated capability `core/inv-db.ts` (`InvDb` — the platform's only write path to inv.db3: backup-then-delete, explicit child-row cascade, generic errors). `AccountsStore.cleanupStale(dryRun)` consumes `GET /accounts/stale` and drops dead accounts (17) + entry_only chars (30) from entry.yaml + gsiv.db + inv.db3. `POST /accounts/stale/cleanup` (accounts.write, TOTP-gated, `dry_run` param). Accounts page gains a TOTP-gated "Clean up stale" action. 326 backend tests green; security review clean (dry_run preview added for the transient-`error` concern). Deployed + verified live (endpoint in spec, 403 w/o TOTP, 401 w/o auth, stale counts 30/17, frontend bundle `text/javascript`). **TOTP migrated from retired dashboard.phylactery**: v1 `/opt/gs4sd/data/totp_secret` → v2 `/opt/gsiv-platform/backend/data/totp_secret` (identical otpauth SHA1/6/30 params — existing authenticator entry works unchanged; verified `valid:true`). **Pending (user self-service):** click "Clean up stale" on /accounts with a fresh code → drops 17 dead accounts + 30 stale chars; then verify /accounts, /lookup Overview, /characters no longer list them. Then scheduler UX redesign.
+
+**Leftover (flag, not acted on):** orphaned `fishbyte.service` (`node dist/index.js` PID 782678, port 3101, started Jul 28) still runs on the server — pre-existing, separate from gsiv-platform (3102).
+
 **Restart prompt (copy-paste into a new session when resuming):**
 
 > Continue GSIVPlatform work in `D:\Code Projects\GSIVPlatform` (repo outside the C: workspace — all edits
@@ -187,9 +191,7 @@ Apious, Pace, Rhezikk, Tahreal, Thadior...). Stale incl. **Scorpa (LWELLS5500)**
 > /api/modules/accounts/accounts/stale, Accounts page stale banner; server entry.yaml = 36 accounts (migrated
 > from local C:\lich5, backup entry.yaml.bak-roster-migrate-20260812-215148); gsiv-roster-scan.timer Mon 03:30
 > UTC; machine token has accounts.read,accounts.write. First backfill: 19 ok / 8 error / 9 bad_password; 45
-> chars auto-added; 30 stale (Scorpa, Mahres, Bilz...). NEXT = **stale-char cleanup** — consume GET
-> /accounts/stale to drop the 17 dead accounts + stale chars from entry.yaml / inv.db3 / characters module
-> (this is what makes invdb accurate); then **scheduler UX redesign**. Testing rule:
+> chars auto-added; 30 stale (Scorpa, Mahres, Bilz...). STALE-CHAR CLEANUP SHIPPED (2026-08-12): POST /accounts/stale/cleanup (accounts.write, TOTP-gated, dry_run) + Accounts page 'Clean up stale' button live; TOTP migrated from dashboard.phylactery (v1 secret → v2, same otpauth). NEXT = run 'Clean up stale' (user self-service) to drop the 17 dead accounts + 30 stale chars, then verify /accounts, /lookup Overview, /characters; then **scheduler UX redesign**. Testing rule:
 > Fisternar/Neleourg only, Amn off-limits. Server: `ssh -i ~/.ssh/id_ed25519 ubuntu@51.68.235.144` (origin IP;
 > the DNS name is Cloudflare-fronted and unreachable) — runbook at top of /opt/gsiv-platform/backend/.env;
 > frontend deploys MUST copy contents into /opt/gsiv-platform/frontend (Caddy root), never dist/; verify the
