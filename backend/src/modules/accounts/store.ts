@@ -39,6 +39,7 @@ export interface ScanCharacterRow {
   status: string;
   auto_added: number;
   last_seen?: number | null;
+  transferred_to?: string | null;
 }
 
 const MIGRATIONS = [
@@ -319,9 +320,16 @@ export class AccountsStore {
 
   /** Rows flagged as stale (entry_only) + accounts with auth problems (feed for cleanup). */
   async stale(): Promise<{ characters: ScanCharacterRow[]; accounts: ScanAccountRow[] }> {
-    const characters = this.db
+    const rows = this.db
       .prepare("SELECT * FROM account_characters WHERE status = 'entry_only' ORDER BY account_name, char_name")
       .all() as ScanCharacterRow[];
+    const activeElsewhere = this.db.prepare(
+      "SELECT account_name FROM account_characters WHERE LOWER(char_name) = LOWER(?) AND account_name != ? AND status = 'active' LIMIT 1",
+    );
+    const characters = rows.map((c) => {
+      const other = activeElsewhere.get(c.char_name, c.account_name) as { account_name?: string } | undefined;
+      return { ...c, transferred_to: other?.account_name ?? null };
+    });
     const accounts = this.db
       .prepare(
         "SELECT * FROM accounts WHERE auth_status IN ('bad_password', 'error', 'decrypt_error') ORDER BY account_name",

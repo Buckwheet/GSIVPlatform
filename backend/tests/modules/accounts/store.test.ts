@@ -456,4 +456,35 @@ describe("AccountsStore", () => {
       expect(logged.filter((l) => l.startsWith("no_active_chars:"))).toHaveLength(1);
     });
   });
+
+  describe("transfer detection in stale()", () => {
+    it("sets transferred_to when an entry_only char is active under another account", async () => {
+      const { db, store } = makeStore();
+      const ins = db.get();
+      ins
+        .prepare(
+          "INSERT INTO account_characters (account_name, char_name, status) VALUES ('BUCKWHEET','Fisternar','entry_only')",
+        )
+        .run();
+      ins
+        .prepare("INSERT INTO account_characters (account_name, char_name, status) VALUES ('ALT','Fisternar','active')")
+        .run();
+      const { characters } = await store.stale();
+      const fisternar = characters.find((c) => c.account_name === "BUCKWHEET" && c.char_name === "Fisternar");
+      expect(fisternar?.transferred_to).toBe("ALT");
+    });
+
+    it("leaves transferred_to null when the gone char is not active elsewhere", async () => {
+      const { db, store } = makeStore();
+      const ins = db.get();
+      ins
+        .prepare(
+          "INSERT INTO account_characters (account_name, char_name, status) VALUES ('BUCKWHEET','Zepherus','entry_only')",
+        )
+        .run();
+      const { characters } = await store.stale();
+      const zepherus = characters.find((c) => c.char_name === "Zepherus");
+      expect(zepherus?.transferred_to).toBeNull();
+    });
+  });
 });
