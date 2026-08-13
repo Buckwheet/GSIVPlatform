@@ -345,4 +345,70 @@ describe("AccountsStore", () => {
 
     rmSync(dir, { recursive: true, force: true });
   });
+
+  describe("refreshAndClassify", () => {
+    it("classifies start_failed without consulting SGE", async () => {
+      const { store } = makeStore(); // default sge errors, but result === "failed" short-circuits
+      const res = await store.refreshAndClassify("BUCKWHEET", [
+        { char: "Fisternar", result: "failed", error: "unit not found" },
+      ]);
+      expect(res).toEqual([
+        {
+          char: "Fisternar",
+          result: "failed",
+          error: "unit not found",
+          code: "start_failed",
+          reason: "systemd start failed: unit not found",
+        },
+      ]);
+    });
+
+    it("classifies auth_bad_password from a fresh SGE re-check", async () => {
+      const { store } = makeStore({ sge: sgeError(new Error("invalid_password")) });
+      const res = await store.refreshAndClassify("BUCKWHEET", [
+        { char: "Fisternar", result: "timeout", error: "not online" },
+      ]);
+      expect(res[0]).toMatchObject({ code: "auth_bad_password", reason: "account auth: bad_password" });
+    });
+
+    it("classifies auth_decrypt_error when the password can't be decrypted", async () => {
+      const { store } = makeStore({ ruby: failingRuby() });
+      const res = await store.refreshAndClassify("BUCKWHEET", [
+        { char: "Fisternar", result: "timeout", error: "not online" },
+      ]);
+      expect(res[0]).toMatchObject({ code: "auth_decrypt_error" });
+    });
+
+    it("classifies sge_unreachable for a transport error, not an auth failure", async () => {
+      const { store } = makeStore({ sge: sgeError(new Error("SGE timeout")) });
+      const res = await store.refreshAndClassify("BUCKWHEET", [
+        { char: "Fisternar", result: "timeout", error: "not online" },
+      ]);
+      expect(res[0]).toMatchObject({ code: "sge_unreachable" });
+    });
+
+    it("classifies char_disabled when the char is absent from SGE's active list", async () => {
+      const { store } = makeStore({ sge: sgeOk([{ slot: "1", name: "Zepherus" }]) });
+      const res = await store.refreshAndClassify("BUCKWHEET", [
+        { char: "Fisternar", result: "timeout", error: "not online" },
+      ]);
+      expect(res[0]).toMatchObject({ code: "char_disabled" });
+    });
+
+    it("classifies no_write when the char is active but produced no invdb write", async () => {
+      const { store } = makeStore({ sge: sgeOk([{ slot: "1", name: "Zepherus" }]) });
+      const res = await store.refreshAndClassify("BUCKWHEET", [
+        { char: "Zepherus", result: "timeout", error: "no invdb write" },
+      ]);
+      expect(res[0]).toMatchObject({ code: "no_write" });
+    });
+
+    it("classifies transient when auth ok + char active but never came online", async () => {
+      const { store } = makeStore({ sge: sgeOk([{ slot: "1", name: "Zepherus" }]) });
+      const res = await store.refreshAndClassify("BUCKWHEET", [
+        { char: "Zepherus", result: "timeout", error: "not online" },
+      ]);
+      expect(res[0]).toMatchObject({ code: "transient" });
+    });
+  });
 });

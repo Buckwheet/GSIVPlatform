@@ -11,6 +11,14 @@ const scheduleSchema = z.object({
   error: z.string().nullable(),
 });
 
+const charFailureSchema = z.object({
+  char: z.string(),
+  result: z.string(),
+  code: z.string(),
+  reason: z.string(),
+  error: z.string().nullable().optional(),
+});
+
 const accountSchema = z.object({
   account: z.string(),
   chars: z.array(z.string()),
@@ -22,6 +30,7 @@ const accountSchema = z.object({
   error: z.string().nullable(),
   startedAt: z.number().nullable(),
   finishedAt: z.number().nullable(),
+  failures: z.array(charFailureSchema),
 });
 
 const jobSchema = z.object({
@@ -117,6 +126,14 @@ const historyRoute = createRoute({
                     chars_done: z.number(),
                     chars_failed: z.number(),
                     error: z.string().nullable(),
+                    chars: z.array(
+                      z.object({
+                        char_name: z.string(),
+                        result: z.string(),
+                        code: z.string(),
+                        reason: z.string().nullable(),
+                      }),
+                    ),
                   }),
                 ),
               }),

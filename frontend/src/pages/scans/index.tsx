@@ -4,6 +4,13 @@ import { api } from "../../core/api";
 import { can, type AuthState } from "../../core/auth";
 import { useWsEvents } from "../../core/useWs";
 
+interface CharFailure {
+  char: string;
+  result: string;
+  code: string;
+  reason: string;
+  error?: string | null;
+}
 interface ScanAccountState {
   account: string;
   chars: string[];
@@ -15,6 +22,7 @@ interface ScanAccountState {
   error: string | null;
   startedAt: number | null;
   finishedAt: number | null;
+  failures: CharFailure[];
 }
 interface ScanJob {
   id: number;
@@ -34,6 +42,7 @@ interface HistoryAccount {
   chars_done: number;
   chars_failed: number;
   error: string | null;
+  chars: { char_name: string; result: string; code: string; reason: string | null }[];
 }
 interface HistoryJob {
   id: number;
@@ -64,6 +73,17 @@ const STAGE_LABEL: Record<string, string> = {
   done: "done",
   failed: "failed",
   timeout: "timed out",
+};
+
+const FAILURE_TONE: Record<string, string> = {
+  auth_bad_password: "var(--warn)",
+  auth_error: "var(--warn)",
+  auth_decrypt_error: "var(--warn)",
+  sge_unreachable: "var(--warn)",
+  char_disabled: "var(--bad)",
+  no_write: "var(--text-muted)",
+  transient: "var(--text-muted)",
+  start_failed: "var(--text-muted)",
 };
 
 export default function Scans({ auth }: { auth: AuthState }) {
@@ -254,6 +274,15 @@ export default function Scans({ auth }: { auth: AuthState }) {
                   </div>
                 )}
                 {a.error && <div className="muted" style={{ fontSize: "var(--font-size-sm)", color: "var(--bad)" }}>{a.error}</div>}
+                {a.failures && a.failures.length > 0 && (
+                  <div style={{ marginTop: "var(--space-1)" }}>
+                    {a.failures.map((f) => (
+                      <div key={f.char} style={{ fontSize: "var(--font-size-sm)", color: FAILURE_TONE[f.code] ?? "var(--bad)" }}>
+                        ✗ {f.char} — <strong>{f.code}</strong> {f.reason}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -280,6 +309,23 @@ export default function Scans({ auth }: { auth: AuthState }) {
                 <Button size="sm" variant="ghost" style={{ marginLeft: "var(--space-2)" }} onClick={() => void retry(h.id)} ariaLabel={`Retry job ${h.id}`}>
                   retry
                 </Button>
+              )}
+              {h.accounts.some((a) => a.chars && a.chars.length > 0) && (
+                <details style={{ marginTop: "var(--space-1)" }}>
+                  <summary style={{ cursor: "pointer" }}>failed characters</summary>
+                  {h.accounts
+                    .filter((a) => a.chars && a.chars.length > 0)
+                    .map((a) => (
+                      <div key={a.account_name} style={{ margin: "var(--space-1) 0" }}>
+                        <strong>{a.account_name}</strong>
+                        {a.chars.map((c) => (
+                          <div key={c.char_name} style={{ marginLeft: "var(--space-2)", color: FAILURE_TONE[c.code] ?? "var(--bad)" }}>
+                            ✗ {c.char_name} — <strong>{c.code}</strong> {c.reason ?? ""}
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                </details>
               )}
             </div>
           ))

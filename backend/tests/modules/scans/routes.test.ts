@@ -11,7 +11,7 @@ import { createApp } from "../../../src/core/server.js";
 import { EventBus } from "../../../src/core/ws.js";
 import { healthModule } from "../../../src/modules/health/index.js";
 import { createScansModule } from "../../../src/modules/scans/index.js";
-import { ScansStore } from "../../../src/modules/scans/store.js";
+import { type CharFailureClassifier, ScansStore } from "../../../src/modules/scans/store.js";
 
 const H = { Authorization: "Bearer tok" };
 const dir = mkdtempSync(join(tmpdir(), "gsiv-scans-routes-"));
@@ -87,5 +87,62 @@ describe("scans module routes", () => {
     const spec = (await res.json()) as { paths: Record<string, unknown> };
     expect(spec.paths["/api/modules/scans/scan"]).toBeDefined();
     expect(spec.paths["/api/modules/scans/scan/status"]).toBeDefined();
+  });
+
+  it("GET /scan/history includes per-char failure detail after a failing scan", async () => {
+    const db = new CoreDb(":memory:");
+    const yamlPath = join(dir, "entry-fail.yaml");
+    writeFileSync(
+      yamlPath,
+      "accounts:\n  Buckwheet:\n    characters:\n      - char_name: Fisternar\n        game_code: GSIV\n",
+    );
+    const yaml = new EntryYaml(yamlPath);
+    const runner = {
+      async scanChar(char: string) {
+        return { char, result: "failed" as const, error: "boom" };
+      },
+    };
+    const classifier: CharFailureClassifier = {
+      async refreshAndClassify(_account, failed) {
+        return failed.map((f) => ({ ...f, code: "start_failed", reason: "systemd start failed: boom" }));
+      },
+    };
+    const store = new ScansStore(
+      db,
+      yaml,
+      runner,
+      () => {},
+      () => {},
+      {
+        okAccounts: () => ["BUCKWHEET"],
+        classifier,
+      },
+    );
+    const registry = new Registry();
+    registry.register(healthModule);
+    registry.register(createScansModule(store, { exec: () => "" }));
+    registry.validate();
+    const auth = new Auth(new InMemoryKV());
+    auth.loadFromEnv("limited:tok:scans.read,scans.write");
+    const app = createApp({ registry, kv: new InMemoryKV(), db, auth, eventBus: new EventBus() });
+
+    const start = await app.request("/api/modules/scans/scan", { method: "POST", headers: H, body: "{}" });
+    expect(start.status).toBe(200);
+    await store.whenIdle();
+
+    const res = await app.request("/api/modules/scans/scan/history", { headers: H });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      jobs: {
+        accounts: {
+          account_name: string;
+          chars: { char_name: string; result: string; code: string; reason: string | null }[];
+        }[];
+      }[];
+    };
+    const acct = body.jobs[0].accounts.find((a) => a.account_name === "BUCKWHEET");
+    expect(acct?.chars).toEqual([
+      { char_name: "Fisternar", result: "failed", code: "start_failed", reason: "systemd start failed: boom" },
+    ]);
   });
 });
