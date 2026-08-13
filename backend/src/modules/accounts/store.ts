@@ -3,6 +3,10 @@ import type { EntryYaml } from "../../core/entry-yaml.js";
 import type { InvDbCleaner } from "../../core/inv-db.js";
 import type { Ruby } from "../../core/ruby.js";
 import type { Sge } from "../../core/sge.js";
+import type { CharFailure, CharFailureClassified } from "../scans/store.js";
+
+/** SGE errors that mean "couldn't reach/verify SGE" rather than a definitive auth rejection. */
+const SGE_TRANSPORT_RE = /timeout|certificate|ECONN|ENOTFOUND|ETIMEDOUT|EAI_|getaddrinfo/i;
 
 // ---------------------------------------------------------------------------
 // AccountsStore: scan orchestration + scan-result persistence (CoreDb).
@@ -122,13 +126,28 @@ export class AccountsStore {
     name: string,
     yamlChars?: { char_name: string; game_code: string }[],
   ): Promise<{ ok: boolean; error?: string }> {
+    const r = await this.refresh(name, yamlChars);
+    return r.ok ? { ok: true } : { ok: false, error: r.error };
+  }
+
+  /**
+   * Re-run the SGE auth + character-list check for one account and persist the
+   * result (the original scanOne body). Used by scanOne and the failure
+   * classifier. Returns the persisted auth state on success.
+   */
+  async refresh(
+    name: string,
+    yamlChars?: { char_name: string; game_code: string }[],
+  ): Promise<{ ok: boolean; error?: string; authStatus: string; authError: string | null }> {
     const accountName = name.toUpperCase();
     const chars =
       yamlChars ??
       this.safeYamlChars()
         .filter((c) => c.account === accountName)
         .map((c) => ({ char_name: c.char_name, game_code: c.game_code }));
-    if (!chars.length) return { ok: false, error: "account not found in entry.yaml" };
+    if (!chars.length) {
+      return { ok: false, error: "account not found in entry.yaml", authStatus: "unknown", authError: null };
+    }
 
     const gameCode = chars[0].game_code || "GS3";
     let authStatus = "unknown";
@@ -140,7 +159,7 @@ export class AccountsStore {
       authStatus = "decrypt_error";
       authError = decrypted.error;
       this.saveScan(accountName, authStatus, authError, this.yamlOnlyChars(accountName, chars));
-      return { ok: true };
+      return { ok: true, authStatus, authError };
     }
 
     try {
@@ -191,11 +210,50 @@ export class AccountsStore {
       authStatus = (err as Error).message === "invalid_password" ? "bad_password" : "error";
       authError = (err as Error).message;
       this.saveScan(accountName, authStatus, authError, this.yamlOnlyChars(accountName, chars));
-      return { ok: true };
+      return { ok: true, authStatus, authError };
     }
 
     this.saveScan(accountName, authStatus, authError, characters);
-    return { ok: true };
+    return { ok: true, authStatus, authError };
+  }
+
+  /** Classify failed scan chars by cross-referencing a fresh SGE re-check. */
+  async refreshAndClassify(account: string, failed: CharFailure[]): Promise<CharFailureClassified[]> {
+    const r = await this.refresh(account);
+    return failed.map((f) => this.classifyFailure(account, f, r.authStatus, r.authError));
+  }
+
+  private classifyFailure(
+    account: string,
+    f: CharFailure,
+    authStatus: string,
+    authError: string | null,
+  ): CharFailureClassified {
+    if (f.result === "failed") {
+      return { ...f, code: "start_failed", reason: `systemd start failed: ${f.error ?? "unknown"}` };
+    }
+    if (authStatus === "bad_password") {
+      return { ...f, code: "auth_bad_password", reason: "account auth: bad_password" };
+    }
+    if (authStatus === "decrypt_error") {
+      return { ...f, code: "auth_decrypt_error", reason: `account password decrypt failed: ${authError ?? ""}` };
+    }
+    if (authStatus === "error") {
+      if (SGE_TRANSPORT_RE.test(authError ?? "")) {
+        return { ...f, code: "sge_unreachable", reason: "SGE unreachable during re-check (retry later)" };
+      }
+      return { ...f, code: "auth_error", reason: `account auth: ${authError ?? "error"}` };
+    }
+    const row = this.db
+      .prepare("SELECT status FROM account_characters WHERE account_name = ? AND LOWER(char_name) = LOWER(?)")
+      .get(account.toUpperCase(), f.char) as { status?: string } | undefined;
+    if (row?.status !== "active") {
+      return { ...f, code: "char_disabled", reason: "character not active on SGE (disabled/inactive/deleted)" };
+    }
+    if (f.result === "timeout" && f.error === "no invdb write") {
+      return { ...f, code: "no_write", reason: "character online but inv.db3 not written (script/mechanical flake)" };
+    }
+    return { ...f, code: "transient", reason: "character active + auth ok but never came online (timing flake)" };
   }
 
   /** Accounts + characters from the scan results. */
