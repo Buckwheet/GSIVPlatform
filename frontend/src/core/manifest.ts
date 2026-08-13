@@ -24,6 +24,7 @@ const LOADERS: Record<string, () => Promise<PageModule>> = {
   accounts: () => import("../pages/accounts"),
   config: () => import("../pages/config"),
   analysis: () => import("../pages/analysis"),
+  scans: () => import("../pages/scans"),
   "your-shops": () => import("../pages/your-shops"),
 };
 
@@ -43,6 +44,7 @@ export const NAV_COMPONENTS: Record<string, LazyExoticComponent<ComponentType<Pa
   accounts: lazy(LOADERS.accounts),
   config: lazy(LOADERS.config),
   analysis: lazy(LOADERS.analysis),
+  scans: lazy(LOADERS.scans),
   "your-shops": lazy(LOADERS["your-shops"]),
 };
 

@@ -29,6 +29,8 @@ const EVENT_TYPES = [
   "heal_accepted",
   "heal_complete",
   "sale_update",
+  "scan_update",
+  "scan_alert",
 ] as const;
 
 export function createWsBridge(server: ServerType, auth: Auth, eventBus: EventBus): () => void {

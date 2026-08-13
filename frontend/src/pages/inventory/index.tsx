@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { Button, Input, Table, useToast } from "../../components";
 import { api } from "../../core/api";
 import type { AuthState } from "../../core/auth";
-import { InventoryScheduler } from "./Scheduler";
 
 interface InvRow {
   id?: string | number;
@@ -62,7 +61,6 @@ export default function Inventory({ auth }: { auth: AuthState }) {
         </p>
       </header>
 
-      <InventoryScheduler auth={auth} />
 
       <div className="toolbar" style={{ maxWidth: "420px", marginBottom: "var(--space-4)" }}>
         <Input

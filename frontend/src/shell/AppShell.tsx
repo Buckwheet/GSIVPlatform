@@ -4,6 +4,7 @@ import { can, type AuthState } from "../core/auth";
 import { NAV_GROUPS, NAV_ITEMS } from "../core/manifest";
 import { Button, Badge } from "../components";
 import { Bell } from "./Bell";
+import { ScanAlerts } from "./ScanAlerts";
 
 interface Props {
   auth: AuthState;
@@ -61,6 +62,7 @@ export function AppShell({ auth, onSignOut }: Props) {
         <header className="topbar">
           <span className="topbar-title muted" style={{ fontSize: "var(--font-size-sm)" }}>GSIV Platform</span>
           <span className="topbar-right">
+            <ScanAlerts auth={auth} />
             <Bell auth={auth} />
             <span className="muted" style={{ fontSize: "var(--font-size-sm)" }}>{auth.name}</span>
             <Badge
