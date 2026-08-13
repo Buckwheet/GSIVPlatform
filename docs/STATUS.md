@@ -191,11 +191,12 @@ Apious, Pace, Rhezikk, Tahreal, Thadior...). Stale incl. **Scorpa (LWELLS5500)**
 > replaced the bash scheduler — 5 concurrent accounts, full re-scan (completion = inv.db3 timestamp advance),
 > manual retry, `scan_alert` toast + EventLog. Backend `core/scan-runner.ts` + `modules/scans`; timer
 > `gsiv-invdb-scan.service` → `/opt/gsiv-platform/scripts/gsiv-scan.sh` (machine token + scans.read,scans.write).
-> 334 tests. LOOKUP (steps 1–6) + ROSTER SYNC (weekly SGE poll, stale flagging) also live from 2026-08-12.
+> 345 tests. LOOKUP (steps 1–6) + ROSTER SYNC (weekly SGE poll, stale flagging) also live from 2026-08-12.
+> **CHAR-FAILURE DISAMBIGUATION IMPLEMENTED (2026-08-13, PR #49, merge/deploy pending):** scan failures now
+> show why (auth vs disabled vs transient) via a fresh SGE re-check — `AccountsStore.refreshAndClassify`, `scan_chars`
+> table, per-char reasons on /scans; /accounts reflects the write-back. Merge + deploy + live-smoke next.
 > **Still parked:** (1) stale-char cleanup — user self-service, click "Clean up stale" on /accounts (17 dead +
-> 30 stale chars); (2) SGE-based char-failure disambiguation (why a char failed: auth vs disabled — cross-reference
-> accounts.auth_status/auth_error + SGE logs); (3) roster-sync Phase B (play.net inactive-char scrape); (4) optional
-> ebounty_tracker port. **Testing rule:** Fisternar/Neleourg only, Amn off-limits. **Server:** `ssh -i ~/.ssh/id_ed25519
+> 30 stale chars); (2) roster-sync Phase B (play.net inactive-char scrape); (3) optional ebounty_tracker port. **Testing rule:** Fisternar/Neleourg only, Amn off-limits. **Server:** `ssh -i ~/.ssh/id_ed25519
 > ubuntu@51.68.235.144` (origin IP; DNS name is Cloudflare-fronted) — runbook at top of server .env; frontend
 > deploys MUST copy contents into /opt/gsiv-platform/frontend (Caddy root), verify public bundle is text/javascript.
 > Workflow: branch → `gh pr merge`. Recall memories: gsivplatform-weekly-roster-sync-... , next-feature-interactive-... ,
