@@ -8,6 +8,7 @@ interface AccountRow {
   auth_status: string;
   auth_error: string | null;
   last_scan: number;
+  no_active_chars: number;
 }
 
 interface StaleChar {
@@ -15,6 +16,7 @@ interface StaleChar {
   char_name: string;
   status: string;
   last_seen: number | null;
+  transferred_to?: string | null;
 }
 
 interface StaleAccount {
@@ -248,7 +250,25 @@ export default function Accounts({ auth }: { auth: AuthState }) {
         </Card>
       )}
 
-      {stale && (stale.characters.length > 0 || stale.accounts.length > 0) && (
+      {accounts.some((a) => a.no_active_chars === 1) && (
+        <div
+          style={{
+            marginBottom: "var(--space-4)",
+            padding: "var(--space-3)",
+            background: "var(--tint-warn)",
+            border: "1px solid var(--warn)",
+            borderRadius: "var(--radius-sm)",
+            color: "var(--text-strong)",
+          }}
+        >
+          <strong>No active characters — cancel billing?</strong>{" "}
+          {accounts
+            .filter((a) => a.no_active_chars === 1)
+            .map((a) => a.account_name)
+            .join(", ")}
+        </div>
+      )}
+            {stale && (stale.characters.length > 0 || stale.accounts.length > 0) && (
         <div
           style={{
             marginBottom: "var(--space-4)",
@@ -269,6 +289,7 @@ export default function Accounts({ auth }: { auth: AuthState }) {
                 <li key={`c-${c.account_name}-${c.char_name}`}>
                   <code>{c.char_name}</code> · {c.account_name}
                   {c.last_seen ? ` · last seen ${new Date(c.last_seen).toLocaleString()}` : " · never seen active"}
+                  {c.transferred_to ? ` · ⚠ possibly transferred to ${c.transferred_to}` : ""}
                 </li>
               ))}
               {stale.accounts.map((a) => (
