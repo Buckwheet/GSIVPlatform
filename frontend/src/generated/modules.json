@@ -128,7 +128,6 @@
     "logs.read",
     "gameview.read",
     "inventory.read",
-    "inventory.write",
     "pricing.read",
     "pricing.write",
     "pricing.scrape",

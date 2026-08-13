@@ -629,7 +629,7 @@ export class InventoryStore {
     if (chars.n === 0) {
       notices.push({
         level: "info",
-        message: "No scan data yet - run a scan (Inventory > Run scan now) or wait for the daily scan.",
+        message: "No scan data yet - run a scan (Scans > Scan now) or wait for the daily scan.",
       });
     }
     for (const f of tableFreshness) {

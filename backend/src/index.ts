@@ -11,6 +11,7 @@ import { createKV } from "./core/kv.js";
 import { LichDb } from "./core/lich-db.js";
 import { Registry } from "./core/registry.js";
 import { Ruby } from "./core/ruby.js";
+import { ScanRunner } from "./core/scan-runner.js";
 import { ScriptRunner } from "./core/script-runner.js";
 import { createApp } from "./core/server.js";
 import { Sge } from "./core/sge.js";
@@ -38,6 +39,8 @@ import { createLogsModule } from "./modules/logs/index.js";
 import { createPricingModule } from "./modules/pricing/index.js";
 import { PricingScraper } from "./modules/pricing/scraper.js";
 import { PricingStore } from "./modules/pricing/store.js";
+import { createScansModule } from "./modules/scans/index.js";
+import { ScansStore } from "./modules/scans/store.js";
 import { createYourShopsModule } from "./modules/your-shops/index.js";
 import { YourShopsStore } from "./modules/your-shops/store.js";
 
@@ -70,6 +73,8 @@ yourShopsStore.seedDefaultIfEmpty();
 registry.register(createYourShopsModule(yourShopsStore, pricingDb));
 
 const kv = await createKV();
+
+const eventBus = new EventBus();
 
 // Gems (jar pipeline) is KV-backed operational state — always available.
 const gemsStore = new GemsStore(kv);
@@ -105,6 +110,33 @@ const accountsStore = new AccountsStore(db, new EntryYaml(), new Ruby(), new Sge
 const totp = new Totp();
 registry.register(createAccountsModule(accountsStore, totp));
 
+// Scans: invdb scan orchestrator (5 concurrent accounts) via review-gated capabilities.
+const scanRunner = new ScanRunner({
+  systemd: new Systemd(),
+  invDb: new InvDb(),
+  sendScript: async (char, script) => {
+    await lichStore.pushCommand(char, "scan", script);
+  },
+  isOnline: async (char) => {
+    const state = await lichStore.status(char);
+    return lichStore.isOnline(state);
+  },
+});
+const scansStore = new ScansStore(
+  db,
+  new EntryYaml(),
+  scanRunner,
+  (type, payload) => eventBus.emit(type, payload),
+  (type, char, detail, source) => eventLog.log(type, char, detail, source),
+  {
+    skipAccounts: (process.env.SCAN_SKIP_ACCOUNTS ?? "UNFOCUSEDPIE")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+  },
+);
+registry.register(createScansModule(scansStore));
+
 // Config: lich.db3 (go2/eherbs) + lich config dirs via review-gated capabilities.
 const entryDir = dirname(process.env.ENTRY_YAML_PATH || "/opt/gs4sd/lich5/data/entry.yaml");
 const configFiles = new ConfigFiles({
@@ -123,8 +155,6 @@ registry.register(createAnalysisModule(analysisFiles, new ScriptRunner()));
 registry.validate();
 const auth = new Auth(kv);
 auth.loadFromEnv();
-const eventBus = new EventBus();
-
 const app = createApp({ registry, kv, db, auth, eventBus });
 const port = Number(process.env.PORT || 3100);
 const server = serve({ fetch: app.fetch, port }, () => console.log(`gsiv-platform listening on :${port}`));
