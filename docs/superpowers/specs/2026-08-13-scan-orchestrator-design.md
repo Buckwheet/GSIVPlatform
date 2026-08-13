@@ -36,6 +36,8 @@ live in the wrong place. The user asked for:
 - Persistent job + per-account history; manual retry of failed accounts.
 - **Full re-scan** semantics (re-collect + refresh timestamps) — the daily run
   is a real refresh, and the live view always shows all accounts working.
+- Alert on scan problems — a WS `scan_alert` event drives a shell toast and an
+  EventLog entry when a job finishes with failed accounts.
 
 **Non-goals** (deferred)
 - Per-character (not per-account) retry granularity.
@@ -166,6 +168,11 @@ char-done/account-done/job-done). Payload = the full current job snapshot so a
 (re)connecting client can render from one message. Frontend uses the existing
 `useWsEvents` pattern (as in jars/healer).
 
+`scan_alert` — emitted once on job completion when any account failed:
+`{ jobId, failedAccounts, message }`. A global shell subscriber (like the sales
+Bell) turns this into a "bad" toast; the store also writes an EventLog row
+(`scan_failed` / `scan_partial`) with the failing accounts + reason.
+
 ## 11. Frontend UX (`/scans`)
 
 - Nav: operations group, after Lookup (order ~30), icon e.g. `📡`.
@@ -182,6 +189,9 @@ char-done/account-done/job-done). Payload = the full current job snapshot so a
 - Read-only token -> controls hidden/disabled; live view still renders (read).
 - Inventory page returns to a pure read-only view; update the Overview notice
   copy that points at "Inventory > Run scan now" -> "Scans > Scan now".
+- **Alerting:** a failed/partial job fires a shell toast (any page) via
+  `scan_alert`, and is written to the Logs page via EventLog — so a scheduled
+  run that hits auth/timeout problems is surfaced without visiting /scans.
 
 ## 12. Schedule & timer migration
 
@@ -230,5 +240,10 @@ char-done/account-done/job-done). Payload = the full current job snapshot so a
 ## 16. Out of scope / follow-ups
 
 - Per-character retry granularity; auto-retry; job cancellation.
+- **Error disambiguation via SGE:** a failing first-char can be an auth problem
+  (bad password), a disabled/removed char, or something else — today all surface
+  as a coarse `timeout`/`failed`. Future: cross-reference the account's
+  `auth_status`/`auth_error` (the SGE result already stored in the accounts
+  table) and the SGE error logs to classify the reason per char.
 - Porting `ebounty_tracker.lic` into v2.
 - Streaming more characters (existing `deploy/V2-DEPLOYMENT.md` §VellumFE recipe).
