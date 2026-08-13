@@ -5,7 +5,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { CoreDb } from "../../../src/core/db.js";
 import { EntryYaml } from "../../../src/core/entry-yaml.js";
 import type { ScanCharResult, ScanStage } from "../../../src/core/scan-runner.js";
-import { ScansStore } from "../../../src/modules/scans/store.js";
+import { type CharFailureClassifier, ScansStore } from "../../../src/modules/scans/store.js";
 
 const FIXTURE = join(import.meta.dirname, "..", "..", "fixtures", "entry-yaml.fixture.yaml");
 const TMP = mkdtempSync(join(tmpdir(), "scans-store-"));
@@ -19,6 +19,7 @@ function makeStore(
     maxConcurrent?: number;
     okAccounts?: string[];
     skipAccounts?: string[];
+    classifier?: CharFailureClassifier;
   } = {},
 ) {
   const db = new CoreDb(":memory:");
@@ -53,6 +54,7 @@ function makeStore(
       maxConcurrent: opts.maxConcurrent ?? 5,
       okAccounts: () => opts.okAccounts ?? ["BUCKWHEET", "ALT"],
       skipAccounts: opts.skipAccounts ?? [],
+      classifier: opts.classifier,
     },
   );
   return { db, store, events, logs, runner, started };
@@ -116,5 +118,48 @@ describe("ScansStore", () => {
     expect(retry.ok).toBe(true);
     expect(retry.totalAccounts).toBe(1); // only BUCKWHEET
     await store.whenIdle();
+  });
+
+  it("classifies failures once per failed account and surfaces them live + in history", async () => {
+    const calls: { account: string; failed: { char: string }[] }[] = [];
+    const classifier: CharFailureClassifier = {
+      async refreshAndClassify(account, failed) {
+        calls.push({ account, failed });
+        return failed.map((f) => ({ ...f, code: "char_disabled", reason: "character not active on SGE" }));
+      },
+    };
+    const { store } = makeStore({ results: { Fisternar: "failed", Zepherus: "failed" }, classifier });
+    store.start();
+    await store.whenIdle();
+    expect(calls).toHaveLength(1); // once per account, not per char
+    expect(calls[0].account).toBe("BUCKWHEET");
+    expect(calls[0].failed.map((f) => f.char).sort()).toEqual(["Fisternar", "Zepherus"]);
+    const acct = store.currentJob()?.accounts.find((a) => a.account === "BUCKWHEET");
+    expect(acct?.failures.map((f) => f.code)).toEqual(["char_disabled", "char_disabled"]);
+    const hist = store.history();
+    const histAcct = hist.jobs[0].accounts.find((a) => a.account_name === "BUCKWHEET");
+    expect(histAcct?.chars.map((c) => c.code)).toEqual(["char_disabled", "char_disabled"]);
+  });
+
+  it("falls back to transient without crashing when the classifier throws", async () => {
+    const classifier: CharFailureClassifier = {
+      async refreshAndClassify() {
+        throw new Error("boom");
+      },
+    };
+    const { store } = makeStore({ results: { Fisternar: "failed", Zepherus: "failed" }, classifier });
+    store.start();
+    await store.whenIdle();
+    const acct = store.currentJob()?.accounts.find((a) => a.account === "BUCKWHEET");
+    expect(acct?.failures.every((f) => f.code === "transient")).toBe(true);
+    expect(store.currentJob()?.status).toBe("partial");
+  });
+
+  it("persists no scan_chars rows for accounts with zero failures", async () => {
+    const { store } = makeStore(); // default runner: all done
+    store.start();
+    await store.whenIdle();
+    const hist = store.history();
+    expect(hist.jobs[0].accounts.every((a) => a.chars.length === 0)).toBe(true);
   });
 });

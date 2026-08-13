@@ -16,6 +16,7 @@ export interface ScanAccountState {
   error: string | null;
   startedAt: number | null;
   finishedAt: number | null;
+  failures: CharFailureClassified[];
 }
 
 export interface ScanJob {
@@ -35,6 +36,31 @@ export interface ScanTarget {
 export interface CharScanner {
   scanChar(char: string, onStage?: (stage: ScanStage, detail: string) => void): Promise<ScanCharResult>;
 }
+
+/** A failed character as the runner reports it (never "done"). */
+export interface CharFailure {
+  char: string;
+  result: "timeout" | "failed";
+  error?: string;
+}
+
+/** A failed character with its disambiguated reason. */
+export interface CharFailureClassified extends CharFailure {
+  code: string;
+  reason: string;
+}
+
+/** Cross-references a fresh SGE re-check to explain why chars failed. */
+export interface CharFailureClassifier {
+  refreshAndClassify(account: string, failed: CharFailure[]): Promise<CharFailureClassified[]>;
+}
+
+/** No-op classifier: labels every failure transient (used when none is injected). */
+const defaultClassifier: CharFailureClassifier = {
+  async refreshAndClassify(_account, failed) {
+    return failed.map((f) => ({ ...f, code: "transient", reason: f.error ?? f.result }));
+  },
+};
 
 const MIGRATIONS = [
   `CREATE TABLE IF NOT EXISTS scan_jobs (
@@ -58,6 +84,16 @@ const MIGRATIONS = [
     finished_at INTEGER
   )`,
   `CREATE INDEX IF NOT EXISTS idx_scan_accounts_job ON scan_accounts(job_id)`,
+  `CREATE TABLE IF NOT EXISTS scan_chars (
+    job_id INTEGER NOT NULL,
+    account_name TEXT NOT NULL,
+    char_name TEXT NOT NULL,
+    result TEXT NOT NULL,
+    code TEXT NOT NULL,
+    reason TEXT,
+    error TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_scan_chars_job ON scan_chars(job_id)`,
 ];
 
 export interface ScansStoreOptions {
@@ -65,6 +101,7 @@ export interface ScansStoreOptions {
   skipAccounts?: string[];
   okAccounts?: () => string[];
   now?: () => number;
+  classifier?: CharFailureClassifier;
 }
 
 const DEFAULT_SKIP = ["UNFOCUSEDPIE"];
@@ -91,6 +128,7 @@ export class ScansStore {
   private readonly skip: Set<string>;
   private readonly okAccounts: () => string[];
   private readonly now: () => number;
+  private readonly classifier: CharFailureClassifier;
 
   constructor(
     db: CoreDb,
@@ -106,6 +144,7 @@ export class ScansStore {
     this.skip = new Set((opts.skipAccounts ?? DEFAULT_SKIP).map((s) => s.toUpperCase()));
     this.okAccounts = opts.okAccounts ?? defaultOkAccounts(db);
     this.now = opts.now ?? Date.now;
+    this.classifier = opts.classifier ?? defaultClassifier;
   }
 
   scanRunning(): boolean {
@@ -159,6 +198,7 @@ export class ScansStore {
         error: null,
         startedAt: null,
         finishedAt: null,
+        failures: [],
       })),
     };
     this.running = true;
@@ -195,6 +235,7 @@ export class ScansStore {
         chars_done: number;
         chars_failed: number;
         error: string | null;
+        chars: { char_name: string; result: string; code: string; reason: string | null }[];
       }[];
     }[];
   } {
@@ -211,17 +252,30 @@ export class ScansStore {
     const acctStmt = this.db.prepare(
       "SELECT account_name, status, chars_total, chars_done, chars_failed, error FROM scan_accounts WHERE job_id = ? ORDER BY account_name",
     );
+    const charsStmt = this.db.prepare(
+      "SELECT char_name, result, code, reason FROM scan_chars WHERE job_id = ? AND account_name = ? ORDER BY char_name",
+    );
     return {
       jobs: jobs.map((j) => ({
         ...j,
-        accounts: acctStmt.all(j.id) as {
-          account_name: string;
-          status: string;
-          chars_total: number;
-          chars_done: number;
-          chars_failed: number;
-          error: string | null;
-        }[],
+        accounts: (
+          acctStmt.all(j.id) as {
+            account_name: string;
+            status: string;
+            chars_total: number;
+            chars_done: number;
+            chars_failed: number;
+            error: string | null;
+          }[]
+        ).map((a) => ({
+          ...a,
+          chars: charsStmt.all(j.id, a.account_name) as {
+            char_name: string;
+            result: string;
+            code: string;
+            reason: string | null;
+          }[],
+        })),
       })),
     };
   }
@@ -247,6 +301,7 @@ export class ScansStore {
         acct.status = "running";
         acct.startedAt = this.now();
         this.emit("scan_update", this.snapshot());
+        const failures: CharFailure[] = [];
         for (const char of acct.chars) {
           acct.current = char;
           acct.stage = "starting";
@@ -259,9 +314,13 @@ export class ScansStore {
           else {
             acct.charsFailed += 1;
             acct.error = acct.error ?? `${char}: ${res.error ?? res.result}`;
+            failures.push({ char, result: res.result, error: res.error });
           }
           acct.current = null;
           acct.stage = null;
+        }
+        if (failures.length > 0) {
+          acct.failures = await this.classify(acct.account, failures);
         }
         acct.status = acct.charsFailed === 0 ? "done" : acct.charsDone === 0 ? "failed" : "partial";
         acct.finishedAt = this.now();
@@ -271,6 +330,18 @@ export class ScansStore {
     };
     const workers = Array.from({ length: Math.min(this.maxConcurrent, queue.length) }, () => next());
     await Promise.all(workers);
+  }
+
+  private async classify(account: string, failures: CharFailure[]): Promise<CharFailureClassified[]> {
+    try {
+      return await this.classifier.refreshAndClassify(account, failures);
+    } catch (err) {
+      return failures.map((f) => ({
+        ...f,
+        code: "transient",
+        reason: `classify failed: ${(err as Error).message}`,
+      }));
+    }
   }
 
   private persistAccount(acct: ScanAccountState): void {
@@ -292,6 +363,13 @@ export class ScansStore {
         acct.startedAt,
         acct.finishedAt,
       );
+    const insChar = this.db.prepare(
+      `INSERT INTO scan_chars (job_id, account_name, char_name, result, code, reason, error)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    );
+    for (const f of acct.failures) {
+      insChar.run(jobId, acct.account, f.char, f.result, f.code, f.reason, f.error ?? null);
+    }
   }
 
   private finalizeJob(): void {
