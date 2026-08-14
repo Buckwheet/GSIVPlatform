@@ -9,6 +9,7 @@ import { EventLog } from "./core/event-log.js";
 import { InvDb } from "./core/inv-db.js";
 import { createKV } from "./core/kv.js";
 import { LichDb } from "./core/lich-db.js";
+import { Playdotnet } from "./core/playdotnet.js";
 import { Registry } from "./core/registry.js";
 import { Ruby } from "./core/ruby.js";
 import { ScanRunner } from "./core/scan-runner.js";
@@ -106,7 +107,7 @@ registry.register(
     systemd: new Systemd(),
   }),
 );
-const accountsStore = new AccountsStore(db, new EntryYaml(), new Ruby(), new Sge(), new InvDb(), {
+const accountsStore = new AccountsStore(db, new EntryYaml(), new Ruby(), new Sge(), new InvDb(), new Playdotnet(), {
   emit: (type, payload) => eventBus.emit(type, payload),
   log: (type, char, detail, source) => eventLog.log(type, char, detail, source),
 });

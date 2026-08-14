@@ -5,6 +5,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { CoreDb } from "../../../src/core/db.js";
 import { EntryYaml } from "../../../src/core/entry-yaml.js";
 import type { InvDbCleaner } from "../../../src/core/inv-db.js";
+import { type InactiveChar, Playdotnet } from "../../../src/core/playdotnet.js";
 import { Ruby } from "../../../src/core/ruby.js";
 import { Sge } from "../../../src/core/sge.js";
 import { AccountsStore } from "../../../src/modules/accounts/store.js";
@@ -65,6 +66,19 @@ class FakeInvDb implements InvDbCleaner {
   }
 }
 
+class FakePlaydotnet extends Playdotnet {
+  constructor(
+    private chars: InactiveChar[] = [],
+    private error?: Error,
+  ) {
+    super();
+  }
+  override async listInactiveCharacters(): Promise<InactiveChar[]> {
+    if (this.error) throw this.error;
+    return this.chars;
+  }
+}
+
 describe("AccountsStore", () => {
   function makeStore(
     overrides: {
@@ -72,6 +86,7 @@ describe("AccountsStore", () => {
       ruby?: Ruby;
       sge?: Sge;
       invDb?: InvDbCleaner;
+      playnet?: Playdotnet;
       delayMs?: number;
       emit?: (type: string, payload: unknown) => void;
       log?: (type: string, char: string | null, detail: string, source: string) => void;
@@ -88,6 +103,7 @@ describe("AccountsStore", () => {
       overrides.ruby ?? okRuby(),
       overrides.sge ?? sgeError(new Error("no network")),
       overrides.invDb ?? new FakeInvDb(),
+      overrides.playnet ?? new FakePlaydotnet(),
       {
         delayMs: overrides.delayMs ?? 0,
         emit: overrides.emit ?? ((type, payload) => emitted.push({ type, payload })),
@@ -356,6 +372,60 @@ describe("AccountsStore", () => {
     expect(fake.deletedCharacters).toEqual([]);
 
     rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("marks a deleted entry_only char from the play.net scrape (deleted=1 + fields)", async () => {
+    const inactive = [
+      {
+        game: "GemStone IV",
+        name: "Fisternar",
+        level: 42,
+        race: "Elf",
+        profession: "Wizard",
+        last_login: "2026-01-15",
+      },
+    ];
+    const { store } = makeStore({
+      sge: sgeOk([{ slot: "1", name: "Zepherus" }]), // Fisternar vanishes from SGE -> entry_only
+      playnet: new FakePlaydotnet(inactive),
+    });
+    await store.scanOne("BUCKWHEET");
+    const list = await store.list();
+    const fisternar = list.characters.find((c) => c.char_name === "Fisternar");
+    expect(fisternar).toMatchObject({
+      status: "entry_only",
+      deleted: 1,
+      level: 42,
+      race: "Elf",
+      profession: "Wizard",
+      last_login: "2026-01-15",
+    });
+  });
+
+  it("adds a brand-new deleted char as source=inactive (GSF for Shattered)", async () => {
+    const inactive = [
+      { game: "Shattered", name: "Ghostchar", level: 7, race: "Human", profession: "Cleric", last_login: "2025-03-01" },
+    ];
+    const { store } = makeStore({
+      sge: sgeOk([{ slot: "1", name: "Zepherus" }]),
+      playnet: new FakePlaydotnet(inactive),
+    });
+    await store.scanOne("BUCKWHEET");
+    const list = await store.list();
+    const ghost = list.characters.find((c) => c.char_name === "Ghostchar");
+    expect(ghost).toMatchObject({ source: "inactive", status: "entry_only", deleted: 1, game_code: "GSF", level: 7 });
+  });
+
+  it("a play.net failure does not fail the scan or change auth_status", async () => {
+    const { store } = makeStore({
+      sge: sgeOk([{ slot: "1", name: "Zepherus" }]),
+      playnet: new FakePlaydotnet([], new Error("boom")),
+    });
+    const res = await store.scanOne("BUCKWHEET");
+    expect(res.ok).toBe(true);
+    const list = await store.list();
+    expect(list.accounts[0].auth_status).toBe("ok");
+    expect(list.characters.every((c) => c.deleted === 0)).toBe(true);
   });
 
   describe("refreshAndClassify", () => {

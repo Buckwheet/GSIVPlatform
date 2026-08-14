@@ -27,6 +27,7 @@ const characterSchema = z.object({
   last_login: z.string().nullable().optional(),
   status: z.string(),
   auto_added: z.number(),
+  deleted: z.number(),
   transferred_to: z.string().nullable().optional(),
 });
 

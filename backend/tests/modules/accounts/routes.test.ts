@@ -8,6 +8,7 @@ import { CoreDb } from "../../../src/core/db.js";
 import { EntryYaml } from "../../../src/core/entry-yaml.js";
 import type { InvDbCleaner } from "../../../src/core/inv-db.js";
 import { InMemoryKV } from "../../../src/core/kv.js";
+import { type InactiveChar, Playdotnet } from "../../../src/core/playdotnet.js";
 import { Registry } from "../../../src/core/registry.js";
 import { Ruby } from "../../../src/core/ruby.js";
 import { createApp } from "../../../src/core/server.js";
@@ -29,6 +30,13 @@ function fakeInvDb(): InvDbCleaner {
     deleteCharacters: () => ({ ok: true, removedCharacters: 0, removedItems: 0 }),
   };
 }
+
+class NoopPlaydotnet extends Playdotnet {
+  override async listInactiveCharacters(): Promise<InactiveChar[]> {
+    return [];
+  }
+}
+
 copyFileSync(FIXTURE, ENTRY_YAML);
 
 describe("accounts module routes", () => {
@@ -48,7 +56,9 @@ describe("accounts module routes", () => {
       setImmediate(() => onError(new Error("no network")));
       return { write: () => {}, destroy: () => {} };
     });
-    const store = new AccountsStore(db, new EntryYaml(ENTRY_YAML), ruby, sge, fakeInvDb(), { delayMs: 0 });
+    const store = new AccountsStore(db, new EntryYaml(ENTRY_YAML), ruby, sge, fakeInvDb(), new NoopPlaydotnet(), {
+      delayMs: 0,
+    });
     const totp = new Totp(TOTP_SECRET);
     const registry = new Registry();
     registry.register(healthModule);
@@ -257,7 +267,9 @@ describe("accounts module routes", () => {
         destroy: () => {},
       };
     });
-    const store = new AccountsStore(db, new EntryYaml(ENTRY_YAML), ruby, sge, fakeInvDb(), { delayMs: 0 });
+    const store = new AccountsStore(db, new EntryYaml(ENTRY_YAML), ruby, sge, fakeInvDb(), new NoopPlaydotnet(), {
+      delayMs: 0,
+    });
     const registry = new Registry();
     registry.register(healthModule);
     registry.register(createAccountsModule(store, new Totp(TOTP_SECRET)));
@@ -270,13 +282,20 @@ describe("accounts module routes", () => {
     const res = await app.request("/api/modules/accounts/accounts/stale", { headers: auth });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      characters: { account_name: string; char_name: string; status: string; transferred_to: string | null }[];
+      characters: {
+        account_name: string;
+        char_name: string;
+        status: string;
+        transferred_to: string | null;
+        deleted: number;
+      }[];
       accounts: { account_name: string; auth_status: string }[];
     };
     const buckwheet = body.characters.filter((c) => c.account_name === "BUCKWHEET");
     expect(buckwheet.map((c) => c.char_name).sort()).toEqual(["Fisternar"]);
     expect(buckwheet.every((c) => c.status === "entry_only")).toBe(true);
     expect(buckwheet.every((c) => c.transferred_to === null)).toBe(true);
+    expect(buckwheet.every((c) => c.deleted === 0)).toBe(true);
     expect(Array.isArray(body.accounts)).toBe(true);
   });
 
