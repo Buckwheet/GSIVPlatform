@@ -187,28 +187,26 @@ Apious, Pace, Rhezikk, Tahreal, Thadior...). Stale incl. **Scorpa (LWELLS5500)**
 
 **Session log — 2026-08-13 (roster-sync Phase B: play.net inactive-char scrape shipped):** ported v1's `scrapeInactiveCharacters` into a review-gated `core/playdotnet.ts` (node-fetch + fetch-cookie + tough-cookie + cheerio; injectable fetch, v1-faithful 3-step login, 5-retry non-fatal) and wired it into `AccountsStore.refresh()` — after SGE auth `ok`, each scan scrapes the account's `inactive_characters.asp` (deleted chars). New `account_characters.deleted` column; `saveScan` persists `deleted` + level/race/profession/last_login. `/accounts` + `/accounts/stale` + the Accounts page Roster-issues list now distinguish **deleted** (last login · L<level> <prof>) vs **transferred** vs **inactive**. 359 backend tests. Spec `docs/superpowers/specs/2026-08-13-playdotnet-inactive-scrape-design.md`, plan `docs/superpowers/plans/2026-08-13-playdotnet-inactive-scrape.md`. **Deployed + live-smoked 2026-08-13 (PR #51, merge `4d2f6e9`):** CGROSS/Fisternar + JAYCELIA/Neleourg both scan `ok`, `deleted=0` present, no play.net scrape errors; public accounts chunk `text/javascript` with the new annotation.
 
+**Session log — 2026-08-13 (late resume + wrap-up — no code changes):** resumed from the restart prompt below; verified the repo is clean and fully synced with origin/main at `9f2a600` (PR #53 — docs-only: deploy runbook node_modules-ownership gotcha + server runbook sync). Re-confirmed the live state: scan orchestrator (/scans, PR #48), lookup steps 1–6, roster-sync + play.net inactive scrape (PR #51), no-active-chars alert (PR #50), char-failure disambiguation (PR #49) — all deployed + smoke-tested on Fisternar/Neleourg. No new work taken on (user's direction: wrap up + refresh the restart prompt). Open items unchanged: (1) stale-char cleanup — the "Clean up stale" button is built + deployed (PR #47, TOTP-gated, `dry_run` preview) and only awaits the user's click on /accounts with a fresh code (17 dead accts + 30 stale chars); (2) optional ebounty_tracker port; (3) stream more chars when they come online (§VellumFE recipe).
+
 **Restart prompt (copy-paste into a new session when resuming):**
 
 > Continue GSIVPlatform work in `D:Code ProjectsGSIVPlatform` (repo outside the C: workspace — all edits
 > through bash; file tools refuse D:). Read docs/STATUS.md §7 first for the full session log.
-> **SCAN ORCHESTRATOR DONE + live (2026-08-13, PR #48, main):** new `/scans` page + TypeScript orchestrator
-> replaced the bash scheduler — 5 concurrent accounts, full re-scan (completion = inv.db3 timestamp advance),
-> manual retry, `scan_alert` toast + EventLog. Backend `core/scan-runner.ts` + `modules/scans`; timer
-> `gsiv-invdb-scan.service` → `/opt/gsiv-platform/scripts/gsiv-scan.sh` (machine token + scans.read,scans.write).
-> 351 tests. LOOKUP (steps 1–6) + ROSTER SYNC (weekly SGE poll, stale flagging) also live from 2026-08-12.
-> **CHAR-FAILURE DISAMBIGUATION LIVE (2026-08-13, PR #49, squash a0f8ee1):** scan failures now show why (auth vs
-> disabled vs transient) via a fresh SGE re-check — `AccountsStore.refreshAndClassify`, `scan_chars` table, per-char reasons
-> on /scans; /accounts reflects the write-back. Deployed + live-smoked on Fisternar/Neleourg (scan job #4, both done).
-> **NO-ACTIVE-CHARACTERS ALERT LIVE (2026-08-13, PR #50, squash 144b66b):** accounts with `auth ok` but zero
-> active SGE chars get flagged `no_active_chars=1`, re-alerting (WS toast + EventLog) on EVERY detection + a "No active
-> characters — cancel billing?" banner on /accounts; gone chars get a "possibly transferred to X" note. Cleanup still
-> manual ("Clean up stale" — Bilz + 17 dead accts / 30 stale chars still pending).
-> **PLAY.NET INACTIVE SCRAPE LIVE (2026-08-13, PR #51, merge 4d2f6e9):** roster-sync Phase B — each scan now also
-> scrapes the account's play.net `inactive_characters.asp` (deleted chars) via `core/playdotnet.ts`; `deleted=1` + level/race/profession/last_login
-> persisted on `account_characters`, surfaced on /accounts + /accounts/stale + the Accounts page (deleted vs transferred vs inactive). 359 tests.
-> **Still parked:** (1) stale-char cleanup — user self-service, click "Clean up stale" on /accounts (17 dead +
-> 30 stale chars); (2) optional ebounty_tracker port. **Testing rule:** Fisternar/Neleourg only, Amn off-limits. **Server:** `ssh -i ~/.ssh/id_ed25519
-> ubuntu@51.68.235.144` (origin IP; DNS name is Cloudflare-fronted) — runbook at top of server .env; frontend
-> deploys MUST copy contents into /opt/gsiv-platform/frontend (Caddy root), verify public bundle is text/javascript.
-> Workflow: branch → `gh pr merge`. Recall memories: gsivplatform-weekly-roster-sync-... , next-feature-interactive-... ,
-> gsiv-server-ssh-origin-ip-... , invdb-lic-patches-... .
+> **ALL SHIPPED FEATURES LIVE (through PR #53, main @ 9f2a600):** scan orchestrator — new /scans page +
+> TypeScript `core/scan-runner.ts` + `modules/scans` replaced the bash scheduler (5 concurrent accounts,
+> full re-scan, manual retry, `scan_alert` toast + EventLog; PR #48) — plus lookup steps 1–6 (Bank/Resources/
+> Tickets/Items/launch/Overview on /lookup), weekly roster-sync (SGE poll + stale flagging), char-failure
+> disambiguation (PR #49: auth vs disabled vs transient via fresh SGE re-check), no-active-characters alert
+> (PR #50), play.net inactive-char scrape (PR #51: `deleted=1` + level/race/profession/last_login on
+> account_characters, surfaced on /accounts). 359 backend tests.
+> **Still parked:** (1) **stale-char cleanup — USER ACTION:** "Clean up stale" on /accounts is built + deployed
+> (PR #47, TOTP-gated, `dry_run` preview) but still unclicked: 17 dead accts + 30 stale chars pending; click it
+> with a fresh authenticator code, then verify /accounts, /lookup Overview, /characters no longer list them;
+> (2) optional ebounty_tracker port; (3) stream more chars when they come online (recipe in
+> deploy/V2-DEPLOYMENT.md §VellumFE). **Testing rule:** Fisternar/Neleourg only, Amn off-limits.
+> **Server:** `ssh -i ~/.ssh/id_ed25519 ubuntu@51.68.235.144` (origin IP; DNS name is Cloudflare-fronted) —
+> runbook at top of server .env; frontend deploys MUST copy contents into /opt/gsiv-platform/frontend
+> (Caddy root), verify public bundle is text/javascript. Workflow: branch → `gh pr merge`. Recall memories:
+> gsivplatform-weekly-roster-sync-... , next-feature-interactive-... , gsiv-server-ssh-origin-ip-... ,
+> invdb-lic-patches-... .
