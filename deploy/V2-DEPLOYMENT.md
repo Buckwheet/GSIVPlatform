@@ -65,6 +65,11 @@ ssh ubuntu@51.68.235.144 "set -e
   sudo systemctl restart gsiv-platform"
 ```
 
+**Ownership gotcha (hit 2026-08-14):** `sudo npm install` leaves root-owned files under
+`node_modules`; a later non-sudo `npm ci`/`npm install` (as `ubuntu`) then fails with `EACCES` on
+`rmdir` of those dirs and crash-loops the service mid-deploy. Always run the install as `sudo`
+(matching the recipe above), or `sudo chown -R ubuntu:ubuntu node_modules` before a non-sudo install.
+
 **Frontend deploy gotcha (hit 2026-08-12):** Caddy serves the SPA from `/opt/gsiv-platform/frontend`
 directly (`root * /opt/gsiv-platform/frontend`), NOT `frontend/dist`. Deploying the build as
 `frontend/dist/` leaves the live `index.html` stale, and requests for the new hashed asset URLs then hit
