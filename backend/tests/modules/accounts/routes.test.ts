@@ -282,13 +282,20 @@ describe("accounts module routes", () => {
     const res = await app.request("/api/modules/accounts/accounts/stale", { headers: auth });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      characters: { account_name: string; char_name: string; status: string; transferred_to: string | null }[];
+      characters: {
+        account_name: string;
+        char_name: string;
+        status: string;
+        transferred_to: string | null;
+        deleted: number;
+      }[];
       accounts: { account_name: string; auth_status: string }[];
     };
     const buckwheet = body.characters.filter((c) => c.account_name === "BUCKWHEET");
     expect(buckwheet.map((c) => c.char_name).sort()).toEqual(["Fisternar"]);
     expect(buckwheet.every((c) => c.status === "entry_only")).toBe(true);
     expect(buckwheet.every((c) => c.transferred_to === null)).toBe(true);
+    expect(buckwheet.every((c) => c.deleted === 0)).toBe(true);
     expect(Array.isArray(body.accounts)).toBe(true);
   });
 

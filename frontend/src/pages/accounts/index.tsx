@@ -17,6 +17,10 @@ interface StaleChar {
   status: string;
   last_seen: number | null;
   transferred_to?: string | null;
+  deleted?: number;
+  level?: number | null;
+  profession?: string | null;
+  last_login?: string | null;
 }
 
 interface StaleAccount {
@@ -288,7 +292,11 @@ export default function Accounts({ auth }: { auth: AuthState }) {
               {stale.characters.map((c) => (
                 <li key={`c-${c.account_name}-${c.char_name}`}>
                   <code>{c.char_name}</code> · {c.account_name}
-                  {c.last_seen ? ` · last seen ${new Date(c.last_seen).toLocaleString()}` : " · never seen active"}
+                  {c.deleted
+                    ? ` · deleted${c.last_login ? ` (last login ${c.last_login})` : ""}${c.level ? ` · L${c.level} ${c.profession ?? ""}` : ""}`
+                    : c.last_seen
+                      ? ` · last seen ${new Date(c.last_seen).toLocaleString()}`
+                      : " · never seen active"}
                   {c.transferred_to ? ` · ⚠ possibly transferred to ${c.transferred_to}` : ""}
                 </li>
               ))}
