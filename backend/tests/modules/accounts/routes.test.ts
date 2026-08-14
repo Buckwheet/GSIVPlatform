@@ -8,6 +8,7 @@ import { CoreDb } from "../../../src/core/db.js";
 import { EntryYaml } from "../../../src/core/entry-yaml.js";
 import type { InvDbCleaner } from "../../../src/core/inv-db.js";
 import { InMemoryKV } from "../../../src/core/kv.js";
+import { type InactiveChar, Playdotnet } from "../../../src/core/playdotnet.js";
 import { Registry } from "../../../src/core/registry.js";
 import { Ruby } from "../../../src/core/ruby.js";
 import { createApp } from "../../../src/core/server.js";
@@ -29,6 +30,13 @@ function fakeInvDb(): InvDbCleaner {
     deleteCharacters: () => ({ ok: true, removedCharacters: 0, removedItems: 0 }),
   };
 }
+
+class NoopPlaydotnet extends Playdotnet {
+  override async listInactiveCharacters(): Promise<InactiveChar[]> {
+    return [];
+  }
+}
+
 copyFileSync(FIXTURE, ENTRY_YAML);
 
 describe("accounts module routes", () => {
@@ -48,7 +56,9 @@ describe("accounts module routes", () => {
       setImmediate(() => onError(new Error("no network")));
       return { write: () => {}, destroy: () => {} };
     });
-    const store = new AccountsStore(db, new EntryYaml(ENTRY_YAML), ruby, sge, fakeInvDb(), { delayMs: 0 });
+    const store = new AccountsStore(db, new EntryYaml(ENTRY_YAML), ruby, sge, fakeInvDb(), new NoopPlaydotnet(), {
+      delayMs: 0,
+    });
     const totp = new Totp(TOTP_SECRET);
     const registry = new Registry();
     registry.register(healthModule);
@@ -257,7 +267,9 @@ describe("accounts module routes", () => {
         destroy: () => {},
       };
     });
-    const store = new AccountsStore(db, new EntryYaml(ENTRY_YAML), ruby, sge, fakeInvDb(), { delayMs: 0 });
+    const store = new AccountsStore(db, new EntryYaml(ENTRY_YAML), ruby, sge, fakeInvDb(), new NoopPlaydotnet(), {
+      delayMs: 0,
+    });
     const registry = new Registry();
     registry.register(healthModule);
     registry.register(createAccountsModule(store, new Totp(TOTP_SECRET)));

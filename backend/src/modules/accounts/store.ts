@@ -1,6 +1,7 @@
 import type { CoreDb } from "../../core/db.js";
 import type { EntryYaml } from "../../core/entry-yaml.js";
 import type { InvDbCleaner } from "../../core/inv-db.js";
+import type { Playdotnet } from "../../core/playdotnet.js";
 import type { Ruby } from "../../core/ruby.js";
 import type { Sge } from "../../core/sge.js";
 import type { CharFailure, CharFailureClassified } from "../scans/store.js";
@@ -38,6 +39,7 @@ export interface ScanCharacterRow {
   last_login?: string | null;
   status: string;
   auto_added: number;
+  deleted: number;
   last_seen?: number | null;
   transferred_to?: string | null;
 }
@@ -67,6 +69,7 @@ const MIGRATIONS = [
   `ALTER TABLE account_characters ADD COLUMN status TEXT NOT NULL DEFAULT 'active'`,
   `ALTER TABLE account_characters ADD COLUMN auto_added INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE accounts ADD COLUMN no_active_chars INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE account_characters ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0`,
 ];
 
 export class AccountsStore {
@@ -80,6 +83,7 @@ export class AccountsStore {
     private ruby: Ruby,
     private sge: Sge,
     private invDb: InvDbCleaner,
+    private playnet: Playdotnet,
     private opts: {
       delayMs?: number;
       emit?: (type: string, payload: unknown) => void;
@@ -197,6 +201,7 @@ export class AccountsStore {
           source: "sge",
           status: "active",
           auto_added: autoAdded.has(sc.name.toLowerCase()) ? 1 : 0,
+          deleted: 0,
         });
       }
       const sgeNames = new Set(sgeChars.map((c) => c.name.toLowerCase()));
@@ -210,6 +215,7 @@ export class AccountsStore {
             source: "entry_yaml",
             status: "entry_only",
             auto_added: 0,
+            deleted: 0,
           });
         }
       }
@@ -218,6 +224,40 @@ export class AccountsStore {
       authError = (err as Error).message;
       this.saveScan(accountName, authStatus, authError, this.yamlOnlyChars(accountName, chars), 0);
       return { ok: true, authStatus, authError };
+    }
+
+    // Phase B: play.net inactive (deleted) characters — non-fatal enrichment.
+    try {
+      const inactive = await this.playnet.listInactiveCharacters(accountName, decrypted.plain);
+      const byName = new Map(characters.map((c) => [c.char_name.toLowerCase(), c]));
+      for (const ic of inactive) {
+        const existing = byName.get(ic.name.toLowerCase());
+        if (existing && existing.status === "entry_only") {
+          existing.deleted = 1;
+          existing.level = ic.level;
+          existing.race = ic.race;
+          existing.profession = ic.profession;
+          existing.last_login = ic.last_login;
+        } else if (!existing) {
+          characters.push({
+            account_name: accountName,
+            char_name: ic.name,
+            slot: null,
+            game_code: ic.game.includes("Shattered") ? "GSF" : "GS3",
+            source: "inactive",
+            status: "entry_only",
+            auto_added: 0,
+            level: ic.level,
+            race: ic.race,
+            profession: ic.profession,
+            last_login: ic.last_login,
+            deleted: 1,
+          });
+        }
+        // a deleted char matching an active SGE row is ignored (defensive)
+      }
+    } catch (err) {
+      console.error(`play.net scrape failed for ${accountName}:`, (err as Error).message);
     }
 
     const noActiveChars = authStatus === "ok" && characters.every((c) => c.status !== "active") ? 1 : 0;
@@ -445,6 +485,7 @@ export class AccountsStore {
       source: "entry_yaml",
       status: "entry_only",
       auto_added: 0,
+      deleted: 0,
     }));
   }
 
@@ -484,20 +525,54 @@ export class AccountsStore {
     const update = this.db.prepare(
       `UPDATE account_characters
        SET slot = ?, game_code = ?, source = ?, status = ?, auto_added = ?,
+           level = ?, race = ?, profession = ?, last_login = ?, deleted = ?,
            last_seen = COALESCE(?, last_seen)
        WHERE account_name = ? AND LOWER(char_name) = LOWER(?)`,
     );
     const insert = this.db.prepare(
-      `INSERT INTO account_characters (account_name, char_name, slot, game_code, source, status, auto_added, last_seen)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO account_characters (account_name, char_name, slot, game_code, source, status, auto_added, level, race, profession, last_login, deleted, last_seen)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     for (const c of characters) {
       const status = c.status ?? "active";
       const lastSeen = status === "active" ? now : null; // entry_only keeps its history
+      const level = c.level ?? null;
+      const race = c.race ?? null;
+      const profession = c.profession ?? null;
+      const lastLogin = c.last_login ?? null;
+      const deleted = c.deleted ?? 0;
       if (find.get(accountName, c.char_name)) {
-        update.run(c.slot, c.game_code, c.source, status, c.auto_added ?? 0, lastSeen, accountName, c.char_name);
+        update.run(
+          c.slot,
+          c.game_code,
+          c.source,
+          status,
+          c.auto_added ?? 0,
+          level,
+          race,
+          profession,
+          lastLogin,
+          deleted,
+          lastSeen,
+          accountName,
+          c.char_name,
+        );
       } else {
-        insert.run(accountName, c.char_name, c.slot, c.game_code, c.source, status, c.auto_added ?? 0, lastSeen);
+        insert.run(
+          accountName,
+          c.char_name,
+          c.slot,
+          c.game_code,
+          c.source,
+          status,
+          c.auto_added ?? 0,
+          level,
+          race,
+          profession,
+          lastLogin,
+          deleted,
+          lastSeen,
+        );
       }
     }
   }
