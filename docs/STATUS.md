@@ -106,8 +106,10 @@ as the `pricing` module.
 **Testing rule: only Fisternar + Neleourg.** Amn is off-limits for any testing (no throwaway test char); verify changes on the live pair with brief restarts (user-approved).
 
 **Remaining (in order):**
-1. **Stream more chars** when they come online (3-step recipe in `deploy/V2-DEPLOYMENT.md` §VellumFE).
+1. ~~**Stream more chars** when they come online (3-step recipe)~~ — **AUTOMATED 2026-08-17** (PR #56): on `POST /launch/:char` for a char not in `VELLUM_STREAMS`, the platform now auto-provisions its VellumFE stream (review-gated `core/stream-provision.ts`). Starting a new character now brings its stream up automatically.
 2. (Optional) port `ebounty_tracker.lic` (`/api/bounty/*`) into v2 if wanted.
+
+**Session log — 2026-08-17 (VellumFE auto-provision on launch, PR #56):** implemented the user's request that stream provisioning be automatic for any future character launch. Previously `POST /launch/:char` 404'd for a char not in `VELLUM_STREAMS` (manual §VellumFE recipe needed). New review-gated capability `core/stream-provision.ts` (`StreamProvisioner`): on launch of an unprovisioned char it writes `gs4sd-lich@<Char>.service.d/override.conf` (adds `--detachable-client`, preserves the char's real `--start-scripts` from the resolved unit), writes `vellum-fe@<Char>.service.d/override.conf`, `daemon-reload` + `enable --now` the stream, restarts Lich only when active, appends a Caddy `@<char>` host matcher+handler (validated before reload), extends server `.env` `VELLUM_STREAMS`, and updates the module's shared in-memory stream map (no sync backend restart). Next-free 910X/920X ports. Backup-then-write + full rollback on failure. Gameview module wired in `index.ts` via a shared mutable `parseStreams(VELLUM_STREAMS)` map. Optional env: `VELLUM_SYSTEMD_DIR`/`VELLUM_CADDYFILE`/`VELLUM_ENV_FILE` (default to real server paths). 12 new tests (371 total); deployed; streams + launch verified no-regression. Plan `docs/plans/2026-08-17-stream-auto-provision.md`.
 
 **Done since this handoff (2026-08-12, cont.):**
 - **your-shops module live** (`/api/modules/your-shops`, page `/your-shops`, dashboard tile, header bell + badge + toasts): tracks the user's shops (seeded Erendiir, Boiler, Jinsem — editable in the UI, `yourshops.read/write`), lists their sales (273 rows, from pricing.db read-only) and alerts on new sales via a `sale_update` WS event. Per-shop baseline: history never spams alerts; adding a shop baselines it silently.
@@ -205,8 +207,9 @@ Apious, Pace, Rhezikk, Tahreal, Thadior...). Stale incl. **Scorpa (LWELLS5500)**
 > **Still parked:** (1) **stale-char cleanup — USER ACTION:** "Clean up stale" on /accounts is built + deployed
 > (PR #47, TOTP-gated, `dry_run` preview) but still unclicked: 17 dead accts + 30 stale chars pending; click it
 > with a fresh authenticator code, then verify /accounts, /lookup Overview, /characters no longer list them;
-> (2) optional ebounty_tracker port; (3) stream more chars when they come online (recipe in
-> deploy/V2-DEPLOYMENT.md §VellumFE). **Testing rule:** Fisternar/Neleourg only, Amn off-limits.
+> (2) optional ebounty_tracker port. **(3) STREAM PROVISIONING IS NOW AUTOMATIC (PR #56):** launching a
+> character not yet in VELLUM_STREAMS auto-provisions its VellumFE stream — no manual §VellumFE recipe needed.
+> **Testing rule:** Fisternar/Neleourg only, Amn off-limits.
 > **Server:** `ssh -i ~/.ssh/id_ed25519 ubuntu@51.68.235.144` (origin IP; DNS name is Cloudflare-fronted) —
 > runbook at top of server .env; frontend deploys MUST copy contents into /opt/gsiv-platform/frontend
 > (Caddy root), verify public bundle is text/javascript. Workflow: branch → `gh pr merge`. Recall memories:
