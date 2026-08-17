@@ -15,9 +15,15 @@ import type { Module } from "../../core/types.js";
  * POST /launch/:char (item-search step 5b): one-click bring-online for a char
  * that has a configured stream. When the char's Lich unit is inactive it is
  * started through the review-gated Systemd capability, then the stream URL is
- * returned so the frontend can open it (zero-click auto-connect). Chars
- * without a VELLUM_STREAMS entry cannot launch — provisioning a stream for a
- * new char is the separate "stream more chars" recipe (§VellumFE).
+ * returned so the frontend can open it (zero-click auto-connect).
+ *
+ * Auto-provisioning (2026-08-17): when a `StreamProvisioner` is supplied and
+ * the char is NOT yet in VELLUM_STREAMS, launch FIRST auto-provisions its
+ * VellumFE stream (review-gated core/stream-provision.ts: Lich drop-in,
+ * vellum-fe unit, Caddy host, .env VELLUM_STREAMS entry) and then starts the
+ * char. This replaces the manual "stream more chars" recipe. Without a
+ * provisioner the old behavior stands: unprovisioned chars 404 (tests /
+ * feature-flagged off).
  */
 
 export type StreamProbe = (webPort: number) => Promise<boolean>;
@@ -123,8 +129,19 @@ export function createGameviewModule(opts: {
   probe?: StreamProbe;
   /** Review-gated Systemd capability (defaults to the real one; inject in tests). */
   systemd?: Systemd;
+  /** Optional review-gated auto-provisioner (core/stream-provision.ts). When
+   *  absent, unprovisioned chars 404 on launch (legacy behavior). */
+  provisioner?: import("../../core/stream-provision.js").StreamProvisioner;
+  /** Shared mutable stream map. When given, both this module and the
+   *  provisioner read/write the same map (so port allocation never collides);
+   *  otherwise a module-local map is used (tests). */
+  streamsMap?: Record<string, { detach: number; web: number }>;
 }): Module {
   const systemd = opts.systemd ?? new Systemd();
+  // Mutable in-memory stream map (initialized from VELLUM_STREAMS). A successful
+  // auto-provision appends here so the launch response + GET /streams reflect
+  // the new char immediately (the .env edit is persisted for the next boot).
+  const streamsMap: Record<string, { detach: number; web: number }> = opts.streamsMap ?? parseStreams(opts.streams);
   return {
     name: "gameview",
     prefix: "/api/modules/gameview",
@@ -137,9 +154,8 @@ export function createGameviewModule(opts: {
     registerRoutes(router: OpenAPIHono, _deps: unknown): void {
       router.openapi(streamsRoute, async (c) => {
         const probe = opts.probe ?? tcpProbe;
-        const streams = parseStreams(opts.streams);
         const out: Record<string, { url: string; up: boolean }> = {};
-        for (const [char, entry] of Object.entries(streams)) {
+        for (const [char, entry] of Object.entries(streamsMap)) {
           out[char] = { url: buildStreamUrl(char, entry, opts), up: await probe(entry.web) };
         }
         return c.json(out);
@@ -153,8 +169,24 @@ export function createGameviewModule(opts: {
           const msg = err instanceof SystemdError ? err.message : "invalid character name";
           return c.json({ error: msg }, 400);
         }
-        const entry = parseStreams(opts.streams)[char];
-        if (!entry) return c.json({ error: `no stream configured for ${char}` }, 404);
+
+        // Provision when the char has no stream yet.
+        let entry = streamsMap[char];
+        if (!entry) {
+          if (!opts.provisioner) {
+            return c.json({ error: `no stream configured for ${char}` }, 404);
+          }
+          let prov: import("../../core/stream-provision.js").StreamProvisionResult;
+          try {
+            prov = await opts.provisioner.provision(char);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : "failed to provision stream";
+            return c.json({ error: msg }, 500);
+          }
+          streamsMap[char] = prov.ports;
+          entry = prov.ports;
+        }
+
         const status = await systemd.show(char);
         let started = false;
         if (!status.active) {

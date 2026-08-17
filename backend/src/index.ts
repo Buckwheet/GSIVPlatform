@@ -16,6 +16,7 @@ import { ScanRunner } from "./core/scan-runner.js";
 import { ScriptRunner } from "./core/script-runner.js";
 import { createApp } from "./core/server.js";
 import { Sge } from "./core/sge.js";
+import { parseStreams, StreamProvisioner } from "./core/stream-provision.js";
 import { Systemd } from "./core/systemd.js";
 import { Totp } from "./core/totp.js";
 import { EventBus } from "./core/ws.js";
@@ -98,6 +99,10 @@ registry.register(createLichModule(lichStore));
 const db = new CoreDb(process.env.DB_PATH || "data/gsiv.db");
 const eventLog = new EventLog(db);
 registry.register(createLogsModule(eventLog));
+// Shared, mutable stream map for the gameview module + auto-provisioner, seeded
+// from VELLUM_STREAMS. Both read/write the same object so on-launch provisioning
+// never allocates a colliding port pair across requests.
+const gameviewStreams = parseStreams(process.env.VELLUM_STREAMS);
 registry.register(
   createGameviewModule({
     baseUrl: process.env.VELLUM_BASE_URL,
@@ -105,6 +110,20 @@ registry.register(
     streams: process.env.VELLUM_STREAMS,
     token: process.env.VELLUM_TOKEN,
     systemd: new Systemd(),
+    // Auto-provision VellumFE streams for on-launch chars (2026-08-17):
+    // shared mutable map keeps port allocation in sync across requests.
+    streamsMap: gameviewStreams,
+    provisioner: new StreamProvisioner({
+      paths: {
+        systemdDir: process.env.VELLUM_SYSTEMD_DIR || "/etc/systemd/system",
+        caddyfile: process.env.VELLUM_CADDYFILE || "/etc/caddy/Caddyfile",
+        envPath: process.env.VELLUM_ENV_FILE || "/opt/gsiv-platform/backend/.env",
+      },
+      baseUrl: process.env.VELLUM_BASE_URL,
+      streamDomain: process.env.VELLUM_STREAM_DOMAIN || "",
+      token: process.env.VELLUM_TOKEN,
+      currentStreams: () => gameviewStreams,
+    }),
   }),
 );
 const accountsStore = new AccountsStore(db, new EntryYaml(), new Ruby(), new Sge(), new InvDb(), new Playdotnet(), {

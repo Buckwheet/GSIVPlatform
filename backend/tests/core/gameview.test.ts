@@ -18,6 +18,8 @@ function makeApp(env: {
   token?: string;
   probe?: (port: number) => Promise<boolean>;
   systemd?: Systemd;
+  provisioner?: import("../../src/core/stream-provision.js").StreamProvisioner;
+  streamsMap?: Record<string, { detach: number; web: number }>;
 }) {
   const registry = new Registry();
   registry.register(
@@ -28,6 +30,8 @@ function makeApp(env: {
       token: env.token,
       probe: env.probe,
       systemd: env.systemd,
+      provisioner: env.provisioner,
+      streamsMap: env.streamsMap,
     }),
   );
   registry.validate();
@@ -284,6 +288,92 @@ describe("gameview module", () => {
         headers: { Authorization: "Bearer tok" },
       });
       expect(res.status).toBe(403);
+    });
+
+    it("auto-provisions an unprovisioned char and returns its stream URL", async () => {
+      const calls: string[] = [];
+      const streamsMap: Record<string, { detach: number; web: number }> = {
+        Fisternar: { detach: 9101, web: 9201 },
+      };
+      const provisioner = {
+        provision: async (char: string) => {
+          calls.push(char);
+          return {
+            char,
+            ports: { detach: 9104, web: 9204 },
+            provisioned: true,
+            url: `https://ghost.phylactery.ovh/play#token=${TOKEN}&lich=127.0.0.1:9104&name=Ghost`,
+          };
+        },
+      } as unknown as import("../../src/core/stream-provision.js").StreamProvisioner;
+      const app = makeApp({
+        baseUrl: "https://vellum.phylactery.ovh",
+        streamDomain: "phylactery.ovh",
+        streams: "Fisternar:9101:9201",
+        token: TOKEN,
+        provisioner,
+        streamsMap,
+        systemd: fakeSystemd([], false),
+      });
+      const res = await app.request("/api/modules/gameview/launch/Ghost", {
+        method: "POST",
+        headers: { Authorization: "Bearer tok" },
+      });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({
+        char: "Ghost",
+        url: `https://ghost.phylactery.ovh/play#token=${TOKEN}&lich=127.0.0.1:9104&name=Ghost`,
+        started: true,
+      });
+      expect(calls).toEqual(["Ghost"]);
+      // The shared stream map now includes the newly-provisioned char.
+      expect(streamsMap.Ghost).toEqual({ detach: 9104, web: 9204 });
+    });
+
+    it("does not provision a char that is already in the stream map", async () => {
+      const calls: string[] = [];
+      const provisioner = {
+        provision: async (char: string) => {
+          calls.push(char);
+          throw new Error("should not be called");
+        },
+      } as unknown as import("../../src/core/stream-provision.js").StreamProvisioner;
+      const app = makeApp({
+        baseUrl: "https://vellum.phylactery.ovh",
+        streamDomain: "phylactery.ovh",
+        streams: STREAMS,
+        token: TOKEN,
+        provisioner,
+        systemd: fakeSystemd([], true),
+      });
+      const res = await app.request("/api/modules/gameview/launch/Fisternar", {
+        method: "POST",
+        headers: { Authorization: "Bearer tok" },
+      });
+      expect(res.status).toBe(200);
+      expect(calls).toEqual([]);
+    });
+
+    it("maps a provisioning failure to 500", async () => {
+      const provisioner = {
+        provision: async () => {
+          throw new Error("invalid new Caddy config: boom");
+        },
+      } as unknown as import("../../src/core/stream-provision.js").StreamProvisioner;
+      const app = makeApp({
+        baseUrl: "https://vellum.phylactery.ovh",
+        streamDomain: "phylactery.ovh",
+        streams: STREAMS,
+        token: TOKEN,
+        provisioner,
+        systemd: fakeSystemd([], false),
+      });
+      const res = await app.request("/api/modules/gameview/launch/Ghost", {
+        method: "POST",
+        headers: { Authorization: "Bearer tok" },
+      });
+      expect(res.status).toBe(500);
+      expect((await res.json()).error).toContain("invalid new Caddy config");
     });
   });
 });
