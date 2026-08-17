@@ -79,6 +79,12 @@ delta, and a security_review pass before merge.
 - start/stop/restart 404 on unknown characters (only launchable entry.yaml chars have units) — stricter than v1.
 - No invdb/account-scan enrichment yet (needs the accounts module; cross-module imports are forbidden) — lands with Phase A #4.
 
+## Module: gameview (streams + auto-provision)
+- **On-launch auto-provisioning is confined to the review-gated `core/stream-provision.ts`** — the only code that writes the VellumFE host stack. When `POST /launch/:char` targets a char with no `VELLUM_STREAMS` entry, the provisioner: writes `gs4sd-lich@<Char>.service.d/override.conf` (adding `--detachable-client`, preserving the char's real `--start-scripts`), writes `vellum-fe@<Char>.service.d/override.conf`, `daemon-reload`s + `enable --now`s the stream, restarts the Lich unit only if it is active, appends a `@<char> host …` matcher + handler to the Caddyfile, and extends the server `.env` `VELLUM_STREAMS`. It then updates the module's in-memory stream map; **no synchronous backend restart** (would kill the in-flight response). All writes are backup-then-write to `.bak.<ts>`; on any failure the provisioner restores every backup + removes the drop-ins + stops/disables the new stream unit before returning — no half-applied state.
+- **Path + name hygiene:** every char-derived path goes through the same strict `validateCharName` (`[A-Za-z][A-Za-z0-9_-]{0,31}`) as `Systemd`; systemd/Caddyfile/.env paths are injected via env (`VELLUM_SYSTEMD_DIR`/`VELLUM_CADDYFILE`/`VELLUM_ENV_FILE`), never derived from request input. No shell strings — all exec is `execFile(cmd, args)` args arrays against fixed `systemctl`/`caddy` command shapes. `--start-scripts` is read from the unit's resolved ExecStart, never from the request.
+- **Scope gate:** the launch route requires `lich.write`/`characters.write` (unchanged). Provisioning rides the same gate — it is not separately exposed.
+
+
 ## Module: accounts (accounts + entry, TOTP-gated)
 - Scopes: `accounts.read` (accounts/scan status/totp status/verify), `accounts.write` (scan, entry.yaml mutations, TOTP setup). All enforced by scopeGuard.
 - **TOTP gate:** every entry.yaml mutation (add/delete account, password change, add/delete character) requires a valid TOTP code from `core/totp.ts` (secret file mode 0600, window-1 verify, `TOTP_SECRET_PATH` env). v1 error strings preserved. `/totp/verify` is a rate-limited oracle; `/totp/reset` is code-gated (v1-faithful: re-enrollment requires holding the current secret; a lost secret needs operator file deletion).
