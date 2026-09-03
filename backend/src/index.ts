@@ -129,6 +129,12 @@ registry.register(
 const accountsStore = new AccountsStore(db, new EntryYaml(), new Ruby(), new Sge(), new InvDb(), new Playdotnet(), {
   emit: (type, payload) => eventBus.emit(type, payload),
   log: (type, char, detail, source) => eventLog.log(type, char, detail, source),
+  systemd: new Systemd(),
+  kv,
+  configFiles: new ConfigFiles({
+    gsivDir: process.env.GSIV_DATA_DIR || "/opt/gs4sd/data/GSIV",
+    gstDir: process.env.GST_DATA_DIR || "/opt/gs4sd/data/GST",
+  }),
 });
 const totp = new Totp();
 registry.register(createAccountsModule(accountsStore, totp));

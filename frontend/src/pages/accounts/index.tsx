@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api, ApiError } from "../../core/api";
 import { can, type AuthState } from "../../core/auth";
 import { Card, Button, Input, Table, StatusDot, useToast } from "../../components";
+import { DeleteCharacterModal } from "../characters/DeleteCharacterModal";
 
 interface AccountRow {
   account_name: string;
@@ -49,6 +50,7 @@ export default function Accounts({ auth }: { auth: AuthState }) {
   const [adding, setAdding] = useState(false);
   const [cleanupCode, setCleanupCode] = useState("");
   const [cleaning, setCleaning] = useState(false);
+  const [deletingChar, setDeletingChar] = useState<{ account: string; char_name: string } | null>(null);
   const { addToast } = useToast();
   const write = can(auth, ["accounts.write"]);
 
@@ -290,14 +292,35 @@ export default function Accounts({ auth }: { auth: AuthState }) {
             <summary style={{ cursor: "pointer" }}>Show details</summary>
             <ul style={{ margin: "var(--space-2) 0 0 0", paddingLeft: "var(--space-4)" }}>
               {stale.characters.map((c) => (
-                <li key={`c-${c.account_name}-${c.char_name}`}>
-                  <code>{c.char_name}</code> · {c.account_name}
-                  {c.deleted
-                    ? ` · deleted${c.last_login ? ` (last login ${c.last_login})` : ""}${c.level ? ` · L${c.level} ${c.profession ?? ""}` : ""}`
-                    : c.last_seen
-                      ? ` · last seen ${new Date(c.last_seen).toLocaleString()}`
-                      : " · never seen active"}
-                  {c.transferred_to ? ` · ⚠ possibly transferred to ${c.transferred_to}` : ""}
+                <li
+                  key={`c-${c.account_name}-${c.char_name}`}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "var(--space-1) 0",
+                    borderBottom: "1px solid rgba(255,255,255,0.05)",
+                  }}
+                >
+                  <div>
+                    <code>{c.char_name}</code> · {c.account_name}
+                    {c.deleted
+                      ? ` · deleted${c.last_login ? ` (last login ${c.last_login})` : ""}${c.level ? ` · L${c.level} ${c.profession ?? ""}` : ""}`
+                      : c.last_seen
+                        ? ` · last seen ${new Date(c.last_seen).toLocaleString()}`
+                        : " · never seen active"}
+                    {c.transferred_to ? ` · ⚠ possibly transferred to ${c.transferred_to}` : ""}
+                  </div>
+                  {write && (
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      onClick={() => setDeletingChar({ account: c.account_name, char_name: c.char_name })}
+                      ariaLabel={`Delete ${c.char_name}`}
+                    >
+                      Delete
+                    </Button>
+                  )}
                 </li>
               ))}
               {stale.accounts.map((a) => (
@@ -384,6 +407,14 @@ export default function Accounts({ auth }: { auth: AuthState }) {
           </Card>
         </div>
       )}
+
+      <DeleteCharacterModal
+        open={Boolean(deletingChar)}
+        character={deletingChar}
+        auth={auth}
+        onClose={() => setDeletingChar(null)}
+        onDeleted={refresh}
+      />
     </div>
   );
 }

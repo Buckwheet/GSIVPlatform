@@ -131,4 +131,15 @@ describe("InvDb.charTimestamp", () => {
     inv.close();
     rmSync(dir, { recursive: true, force: true });
   });
+
+  it("charItemCount returns total items owned by character", () => {
+    const path = createDb();
+    const inv = new InvDb(path);
+    expect(inv.charItemCount("Norhaak")).toBe(2);
+    expect(inv.charItemCount("norhaak", "Tworazors")).toBe(2);
+    expect(inv.charItemCount("norhaak", "OtherAccount")).toBe(0);
+    expect(inv.charItemCount("Bilz")).toBe(1);
+    expect(inv.charItemCount("Ghost")).toBe(0);
+    inv.close();
+  });
 });

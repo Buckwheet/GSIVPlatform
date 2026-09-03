@@ -1,9 +1,12 @@
+import type { ConfigFiles } from "../../core/config-files.js";
 import type { CoreDb } from "../../core/db.js";
 import type { EntryYaml } from "../../core/entry-yaml.js";
 import type { InvDbCleaner } from "../../core/inv-db.js";
+import type { KV } from "../../core/kv.js";
 import type { Playdotnet } from "../../core/playdotnet.js";
 import type { Ruby } from "../../core/ruby.js";
 import type { Sge } from "../../core/sge.js";
+import type { Systemd } from "../../core/systemd.js";
 import type { CharFailure, CharFailureClassified } from "../scans/store.js";
 
 /** SGE errors that mean "couldn't reach/verify SGE" rather than a definitive auth rejection. */
@@ -88,6 +91,9 @@ export class AccountsStore {
       delayMs?: number;
       emit?: (type: string, payload: unknown) => void;
       log?: (type: string, char: string | null, detail: string, source: string) => void;
+      systemd?: Systemd;
+      kv?: KV;
+      configFiles?: ConfigFiles;
     } = {},
   ) {
     db.migrate("accounts", MIGRATIONS);
@@ -462,17 +468,181 @@ export class AccountsStore {
     return { steps };
   }
 
-  /** Delete a character: entry.yaml + scan db, with per-step results. */
+  /** Preflight summary for character deletion. */
+  async deletePreview(
+    accountName: string,
+    charName: string,
+  ): Promise<{
+    account: string;
+    character: string;
+    active: boolean;
+    managed: boolean;
+    in_yaml: boolean;
+    in_db: boolean;
+    inventory_items: number;
+    has_configs: boolean;
+  }> {
+    const key = accountName.toUpperCase();
+    const inYaml = this.safeYamlChars().some(
+      (c) => c.account.toUpperCase() === key && c.char_name.toLowerCase() === charName.toLowerCase(),
+    );
+    const dbRow = this.db
+      .prepare("SELECT 1 FROM account_characters WHERE account_name = ? AND LOWER(char_name) = LOWER(?)")
+      .get(key, charName);
+    const inDb = Boolean(dbRow);
+
+    let active = false;
+    let managed = false;
+    if (this.opts.systemd) {
+      try {
+        const st = await this.opts.systemd.show(charName);
+        active = st.active;
+      } catch {
+        // ignore
+      }
+    }
+    if (this.opts.kv) {
+      try {
+        const raw = await this.opts.kv.get("characters:managed");
+        if (raw) {
+          const list = JSON.parse(raw) as string[];
+          managed = list.some((n) => n.toLowerCase() === charName.toLowerCase());
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    const inventoryItems = this.invDb.charItemCount ? this.invDb.charItemCount(charName, key) : 0;
+
+    let hasConfigs = false;
+    if (this.opts.configFiles) {
+      try {
+        const res = await this.opts.configFiles.list(charName);
+        if (res.ok && res.files.length > 0) hasConfigs = true;
+      } catch {
+        // ignore
+      }
+    }
+
+    return {
+      account: key,
+      character: charName,
+      active,
+      managed,
+      in_yaml: inYaml,
+      in_db: inDb,
+      inventory_items: inventoryItems,
+      has_configs: hasConfigs,
+    };
+  }
+
+  /** Delete a character: systemd stop + KV eviction + entry.yaml + scan db + inv.db3 + config archive, with per-step results. */
   async deleteCharacterWithSteps(
     accountName: string,
     charName: string,
+    dryRun = false,
   ): Promise<{ steps: { action: string; result: string }[] }> {
     const key = accountName.toUpperCase();
     const steps: { action: string; result: string }[] = [];
-    const y = this.yaml.deleteCharacter(key, charName);
-    steps.push({ action: `Remove ${charName} from entry.yaml`, result: y.removed ? "ok" : "not found" });
-    const dbRemoved = (await this.deleteCharacter(key, charName)) > 0;
-    steps.push({ action: "Remove from dashboard database", result: dbRemoved ? "ok" : "not found" });
+
+    // 1. Stop systemd service if running
+    if (this.opts.systemd) {
+      try {
+        const unit = this.opts.systemd.unitFor(charName);
+        const st = await this.opts.systemd.show(charName);
+        if (st.active) {
+          if (dryRun) {
+            steps.push({ action: `Stop ${unit}`, result: "dry-run (active)" });
+          } else {
+            const stopped = await this.opts.systemd.action("stop", charName);
+            steps.push({ action: `Stop ${unit}`, result: stopped.ok ? "ok" : `error: ${stopped.error}` });
+          }
+        } else {
+          steps.push({ action: `Stop ${unit}`, result: "not running" });
+        }
+      } catch (err) {
+        steps.push({ action: `Stop service for ${charName}`, result: `skipped: ${(err as Error).message}` });
+      }
+    }
+
+    // 2. Evict from watchdog (characters:managed) and clear telemetry KV
+    if (this.opts.kv) {
+      try {
+        if (dryRun) {
+          steps.push({ action: `Evict ${charName} from watchdog and KV cache`, result: "dry-run" });
+        } else {
+          const raw = await this.opts.kv.get("characters:managed");
+          if (raw) {
+            const list = JSON.parse(raw) as string[];
+            const filtered = list.filter((n) => n.toLowerCase() !== charName.toLowerCase());
+            if (filtered.length !== list.length) {
+              await this.opts.kv.set("characters:managed", JSON.stringify(filtered));
+            }
+          }
+          await this.opts.kv.del(`gs4sd:state:${charName.toLowerCase()}`);
+          await this.opts.kv.del(`gems:jars:${charName.toLowerCase()}`);
+          await this.opts.kv.del(`healer:state:${charName.toLowerCase()}`);
+          steps.push({ action: `Evict ${charName} from watchdog and KV cache`, result: "ok" });
+        }
+      } catch {
+        steps.push({ action: `Evict ${charName} from watchdog and KV cache`, result: "skipped" });
+      }
+    }
+
+    // 3. Remove from entry.yaml
+    if (dryRun) {
+      steps.push({ action: `Remove ${charName} from entry.yaml`, result: "dry-run" });
+    } else {
+      const y = this.yaml.deleteCharacter(key, charName);
+      steps.push({ action: `Remove ${charName} from entry.yaml`, result: y.removed ? "ok" : "not found" });
+    }
+
+    // 4. Remove from dashboard database
+    if (dryRun) {
+      steps.push({ action: "Remove from dashboard database", result: "dry-run" });
+    } else {
+      const dbRemoved = (await this.deleteCharacter(key, charName)) > 0;
+      steps.push({ action: "Remove from dashboard database", result: dbRemoved ? "ok" : "not found" });
+    }
+
+    // 5. Cascade delete from inv.db3
+    if (dryRun) {
+      steps.push({ action: `Remove ${charName} (${key}) from inv.db3`, result: "dry-run" });
+    } else {
+      const inv = this.invDb.deleteCharacters([{ name: charName, account: key }]);
+      steps.push({
+        action: `Remove ${charName} (${key}) from inv.db3`,
+        result: inv.ok ? `ok (${inv.removedCharacters} chars, ${inv.removedItems} items)` : `error: ${inv.error}`,
+      });
+    }
+
+    // 6. Archive config files
+    if (this.opts.configFiles) {
+      try {
+        if (dryRun) {
+          steps.push({ action: `Archive config directory for ${charName}`, result: "dry-run" });
+        } else {
+          const arc = await this.opts.configFiles.archive(charName);
+          steps.push({
+            action: `Archive config directory for ${charName}`,
+            result: arc.ok && arc.archived ? "ok" : "none found",
+          });
+        }
+      } catch (err) {
+        steps.push({
+          action: `Archive config directory for ${charName}`,
+          result: `skipped: ${(err as Error).message}`,
+        });
+      }
+    }
+
+    // 7. Audit log & emit
+    if (!dryRun) {
+      this.opts.log?.("character_delete", charName, `Deleted ${charName} from ${key}`, "accounts");
+      this.opts.emit?.("character_deleted", { account: key, character: charName });
+    }
+
     return { steps };
   }
 

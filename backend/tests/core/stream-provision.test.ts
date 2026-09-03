@@ -180,8 +180,23 @@ describe("StreamProvisioner.provision", () => {
     expect(vellDropin).toContain("--character Buckwheet");
 
     // Caddy gained matcher + handler
-    expect(mem.files["/etc/caddy/Caddyfile"]).toContain("@buckwheet host buckwheet.phylactery.ovh");
-    expect(mem.files["/etc/caddy/Caddyfile"]).toContain("reverse_proxy 127.0.0.1:9203");
+    const caddy = mem.files["/etc/caddy/Caddyfile"];
+    expect(caddy).toContain("@buckwheet host buckwheet.phylactery.ovh");
+    expect(caddy).toContain("reverse_proxy 127.0.0.1:9203");
+    // The new handler must be a top-level SIBLING of the other @v… handlers
+    // (1 tab indentation), never nested inside a prior handler's block — a
+    // nesting bug was observed with a hand-edited Caddyfile and caused the
+    // stream page to serve an empty body.
+    const handleLine = caddy.split("\n").find((l) => l.trim() === "handle @buckwheet {");
+    expect(handleLine?.startsWith("\t") && handleLine?.indexOf("handle") === 1).toBe(true);
+    expect(handleLine?.startsWith("\t") && handleLine?.indexOf("handle") === 1).toBe(true);
+    // Balanced braces overall.
+    let balance = 0;
+    for (const ch of caddy.replaceAll("\t", "")) {
+      if (ch === "{") balance++;
+      else if (ch === "}") balance--;
+    }
+    expect(balance).toBe(0);
 
     // .env gained entry; other keys preserved
     const env = mem.files["/opt/gsiv-platform/backend/.env"];

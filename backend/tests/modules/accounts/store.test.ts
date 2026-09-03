@@ -2,12 +2,15 @@ import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
+import type { ConfigFiles } from "../../../src/core/config-files.js";
 import { CoreDb } from "../../../src/core/db.js";
 import { EntryYaml } from "../../../src/core/entry-yaml.js";
 import type { InvDbCleaner } from "../../../src/core/inv-db.js";
+import type { KV } from "../../../src/core/kv.js";
 import { type InactiveChar, Playdotnet } from "../../../src/core/playdotnet.js";
 import { Ruby } from "../../../src/core/ruby.js";
 import { Sge } from "../../../src/core/sge.js";
+import type { Systemd } from "../../../src/core/systemd.js";
 import { AccountsStore } from "../../../src/modules/accounts/store.js";
 
 const FIXTURE = join(import.meta.dirname, "..", "..", "fixtures", "entry-yaml.fixture.yaml");
@@ -64,6 +67,9 @@ class FakeInvDb implements InvDbCleaner {
     this.deletedCharacters.push(...targets);
     return { ok: true, removedCharacters: targets.length, removedItems: 0 };
   }
+  charItemCount(name: string) {
+    return name.toLowerCase() === "fisternar" ? 42 : 0;
+  }
 }
 
 class FakePlaydotnet extends Playdotnet {
@@ -90,6 +96,9 @@ describe("AccountsStore", () => {
       delayMs?: number;
       emit?: (type: string, payload: unknown) => void;
       log?: (type: string, char: string | null, detail: string, source: string) => void;
+      systemd?: Systemd;
+      kv?: KV;
+      configFiles?: ConfigFiles;
     } = {},
   ) {
     const db = new CoreDb(":memory:");
@@ -108,6 +117,9 @@ describe("AccountsStore", () => {
         delayMs: overrides.delayMs ?? 0,
         emit: overrides.emit ?? ((type, payload) => emitted.push({ type, payload })),
         log: overrides.log ?? ((type, _c, detail) => logged.push(`${type}:${detail}`)),
+        systemd: overrides.systemd,
+        kv: overrides.kv,
+        configFiles: overrides.configFiles,
       },
     );
     return { db, store, emitted, logged };
@@ -555,6 +567,149 @@ describe("AccountsStore", () => {
       const { characters } = await store.stale();
       const zepherus = characters.find((c) => c.char_name === "Zepherus");
       expect(zepherus?.transferred_to).toBeNull();
+    });
+  });
+
+  describe("deletePreview and deleteCharacterWithSteps", () => {
+    it("returns preflight summary via deletePreview", async () => {
+      const mockSystemd = {
+        show: async () => ({ active: true, sub: "running", uptime: 300 }),
+        unitFor: (name: string) => `gs4sd-lich@${name}.service`,
+      };
+      const mockKv = {
+        get: async (k: string) => (k === "characters:managed" ? JSON.stringify(["fisternar"]) : null),
+      };
+      const mockConfigFiles = {
+        list: async (char: string) => ({
+          ok: true,
+          character: char,
+          files: [{ path: "bigshot.yaml", size: 50, modified: "now" }],
+        }),
+      };
+      const { db, store } = makeStore({
+        systemd: mockSystemd as unknown as Systemd,
+        kv: mockKv as unknown as KV,
+        configFiles: mockConfigFiles as unknown as ConfigFiles,
+      });
+
+      // Insert character in DB
+      db.get()
+        .prepare(
+          "INSERT INTO account_characters (account_name, char_name, status) VALUES ('BUCKWHEET','Fisternar','active')",
+        )
+        .run();
+
+      const preview = await store.deletePreview("BUCKWHEET", "Fisternar");
+      expect(preview).toEqual({
+        account: "BUCKWHEET",
+        character: "Fisternar",
+        active: true,
+        managed: true,
+        in_yaml: true,
+        in_db: true,
+        inventory_items: 42,
+        has_configs: true,
+      });
+    });
+
+    it("runs complete teardown pipeline in deleteCharacterWithSteps", async () => {
+      let stoppedUnit = "";
+      const mockSystemd = {
+        show: async () => ({ active: true, sub: "running", uptime: 300 }),
+        unitFor: (name: string) => `gs4sd-lich@${name}.service`,
+        action: async (action: string, name: string) => {
+          if (action === "stop") stoppedUnit = `gs4sd-lich@${name}.service`;
+          return { ok: true };
+        },
+      };
+
+      const kvData: Record<string, string> = {
+        "characters:managed": JSON.stringify(["fisternar", "otherchar"]),
+        "gs4sd:state:fisternar": JSON.stringify({ hp: 100 }),
+      };
+      const deletedKeys: string[] = [];
+      const mockKv = {
+        get: async (k: string) => kvData[k] ?? null,
+        set: async (k: string, v: string) => {
+          kvData[k] = v;
+        },
+        del: async (k: string) => {
+          deletedKeys.push(k);
+          delete kvData[k];
+        },
+      };
+
+      let archivedChar = "";
+      const mockConfigFiles = {
+        archive: async (char: string) => {
+          archivedChar = char;
+          return { ok: true, archived: true, path: `/opt/gs4sd/data/GSIV/.archived/${char}.123` };
+        },
+      };
+
+      const fakeInv = new FakeInvDb();
+      const { db, store, emitted, logged } = makeStore({
+        systemd: mockSystemd as unknown as Systemd,
+        kv: mockKv as unknown as KV,
+        configFiles: mockConfigFiles as unknown as ConfigFiles,
+        invDb: fakeInv,
+      });
+
+      db.get()
+        .prepare(
+          "INSERT INTO account_characters (account_name, char_name, status) VALUES ('BUCKWHEET','Fisternar','active')",
+        )
+        .run();
+
+      const res = await store.deleteCharacterWithSteps("BUCKWHEET", "Fisternar");
+      expect(stoppedUnit).toBe("gs4sd-lich@Fisternar.service");
+      expect(JSON.parse(kvData["characters:managed"])).toEqual(["otherchar"]);
+      expect(deletedKeys).toContain("gs4sd:state:fisternar");
+      expect(archivedChar).toBe("Fisternar");
+      expect(fakeInv.deletedCharacters).toEqual([{ name: "Fisternar", account: "BUCKWHEET" }]);
+      expect(emitted).toContainEqual({
+        type: "character_deleted",
+        payload: { account: "BUCKWHEET", character: "Fisternar" },
+      });
+      expect(logged.some((l) => l.includes("character_delete"))).toBe(true);
+
+      const stepResults = res.steps.map((s) => s.result);
+      expect(stepResults).toEqual([
+        "ok", // systemd stopped
+        "ok", // kv evicted
+        "ok", // entry.yaml removed
+        "ok", // DB removed
+        "ok (1 chars, 0 items)", // inv.db3 cascade
+        "ok", // config archived
+      ]);
+    });
+
+    it("supports dryRun preview without mutating state", async () => {
+      let stopCalled = false;
+      const mockSystemd = {
+        show: async () => ({ active: true, sub: "running", uptime: 300 }),
+        unitFor: (name: string) => `gs4sd-lich@${name}.service`,
+        action: async () => {
+          stopCalled = true;
+          return { ok: true };
+        },
+      };
+      const fakeInv = new FakeInvDb();
+      const { db, store } = makeStore({
+        systemd: mockSystemd as unknown as Systemd,
+        invDb: fakeInv,
+      });
+
+      db.get()
+        .prepare(
+          "INSERT INTO account_characters (account_name, char_name, status) VALUES ('BUCKWHEET','Fisternar','active')",
+        )
+        .run();
+
+      const res = await store.deleteCharacterWithSteps("BUCKWHEET", "Fisternar", true);
+      expect(stopCalled).toBe(false);
+      expect(fakeInv.deletedCharacters).toEqual([]);
+      expect(res.steps.every((s) => s.result.startsWith("dry-run"))).toBe(true);
     });
   });
 });

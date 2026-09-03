@@ -5,6 +5,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -127,6 +128,23 @@ export class ConfigFiles {
     };
     walkCopy(srcDir, "");
     return { ok: true, copied };
+  }
+
+  /** Archive the character's config directory (moves to .archived/<char>.<timestamp>). */
+  async archive(char: string, instance?: string): Promise<Ok<{ archived: boolean; path?: string }> | FileResult> {
+    if (!this.validName(char)) return { ok: false, code: "invalid_char" };
+    const charDir = this.resolveCharDir(char, instance);
+    if (!charDir || !existsSync(charDir)) return { ok: true, archived: false };
+    const parent = dirname(charDir);
+    const archiveRoot = join(parent, ".archived");
+    if (!existsSync(archiveRoot)) mkdirSync(archiveRoot, { recursive: true });
+    const target = join(archiveRoot, `${char}.${Date.now()}`);
+    try {
+      renameSync(charDir, target);
+      return { ok: true, archived: true, path: target };
+    } catch {
+      return { ok: true, archived: false };
+    }
   }
 
   private validName(name: string): boolean {

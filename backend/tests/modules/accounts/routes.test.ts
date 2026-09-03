@@ -173,6 +173,12 @@ describe("accounts module routes", () => {
     });
     expect(dupChar.status).toBe(409);
 
+    const preview = await app.request("/api/modules/accounts/entry/account/BUCKWHEET/character/newchar/preview", {
+      headers: auth,
+    });
+    expect(preview.status).toBe(200);
+    expect(((await preview.json()) as { character: string; in_yaml: boolean }).in_yaml).toBe(true);
+
     const delChar = await app.request("/api/modules/accounts/entry/account/BUCKWHEET/character/newchar", {
       method: "DELETE",
       headers: json,
@@ -180,7 +186,7 @@ describe("accounts module routes", () => {
     });
     expect(delChar.status).toBe(200);
     const steps = ((await delChar.json()) as { steps: { result: string }[] }).steps;
-    expect(steps.map((st) => st.result)).toEqual(["ok", "not found"]);
+    expect(steps.map((st) => st.result)).toEqual(["ok", "not found", "ok (0 chars, 0 items)"]);
 
     const delAcct = await app.request("/api/modules/accounts/entry/account/BUCKWHEET", {
       method: "DELETE",
