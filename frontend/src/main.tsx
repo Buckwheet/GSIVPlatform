@@ -1,3 +1,4 @@
+export const BUILD_VERSION = "2026.09.03.2";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
