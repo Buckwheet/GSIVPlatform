@@ -35,6 +35,7 @@ const CHILD_TABLES = ["item", "silver", "resource", "tickets", "lumnis"] as cons
 export interface InvDbCleaner {
   deleteCharacters(targets: InvDeleteTarget[]): InvDeleteResult;
   deleteAccounts(accounts: string[]): InvDeleteResult;
+  charItemCount?(name: string, account?: string): number;
 }
 
 export class InvDb implements InvDbCleaner {
@@ -45,6 +46,24 @@ export class InvDb implements InvDbCleaner {
 
   get path(): string {
     return this.dbPath;
+  }
+
+  /** Count items owned by a character in inv.db3 (preview helper). */
+  charItemCount(name: string, account?: string): number {
+    try {
+      const db = this.open();
+      let sql =
+        "SELECT COUNT(*) as cnt FROM item i JOIN character c ON i.character_id = c.id WHERE LOWER(c.name) = LOWER(?)";
+      const params: string[] = [name];
+      if (account) {
+        sql += " AND UPPER(c.account) = UPPER(?)";
+        params.push(account);
+      }
+      const row = db.prepare(sql).get(...params) as { cnt: number } | undefined;
+      return row?.cnt ?? 0;
+    } catch {
+      return 0;
+    }
   }
 
   /**

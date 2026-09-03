@@ -3,6 +3,7 @@ import { api } from "../../core/api";
 import { can, type AuthState } from "../../core/auth";
 import type { CharacterRow } from "../../core/types";
 import { Table, StatusDot, Button, useToast } from "../../components";
+import { DeleteCharacterModal } from "./DeleteCharacterModal";
 
 const POLL_MS = 15_000; // polling fallback (ws-data-pattern.md §8) until the WS layer lands
 
@@ -12,9 +13,11 @@ export default function Characters({ auth }: { auth: AuthState }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [streams, setStreams] = useState<Record<string, { url: string; up: boolean }>>({});
+  const [deletingChar, setDeletingChar] = useState<CharacterRow | null>(null);
   const canWatch = can(auth, ["gameview.read"]);
   const { addToast } = useToast();
   const write = can(auth, ["characters.write"]);
+  const canDelete = can(auth, ["accounts.write"]);
 
   async function refresh() {
     try {
@@ -107,37 +110,52 @@ export default function Characters({ auth }: { auth: AuthState }) {
         );
       },
     },
-    ...(write
+    ...(write || canDelete
       ? [
           {
             key: "actions",
             header: "Actions",
             render: (r: CharacterRow) => (
               <div className="row-actions">
-                <Button
-                  size="sm"
-                  disabled={busy === r.char_name || r.active}
-                  onClick={() => act(r.char_name, "start")}
-                  ariaLabel={`Start session for ${r.char_name}`}
-                >
-                  Start
-                </Button>
-                <Button
-                  size="sm"
-                  disabled={busy === r.char_name || !r.active}
-                  onClick={() => act(r.char_name, "stop")}
-                  ariaLabel={`Stop session for ${r.char_name}`}
-                >
-                  Stop
-                </Button>
-                <Button
-                  size="sm"
-                  disabled={busy === r.char_name || !r.active}
-                  onClick={() => act(r.char_name, "restart")}
-                  ariaLabel={`Restart session for ${r.char_name}`}
-                >
-                  Restart
-                </Button>
+                {write && (
+                  <>
+                    <Button
+                      size="sm"
+                      disabled={busy === r.char_name || r.active}
+                      onClick={() => act(r.char_name, "start")}
+                      ariaLabel={`Start session for ${r.char_name}`}
+                    >
+                      Start
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={busy === r.char_name || !r.active}
+                      onClick={() => act(r.char_name, "stop")}
+                      ariaLabel={`Stop session for ${r.char_name}`}
+                    >
+                      Stop
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={busy === r.char_name || !r.active}
+                      onClick={() => act(r.char_name, "restart")}
+                      ariaLabel={`Restart session for ${r.char_name}`}
+                    >
+                      Restart
+                    </Button>
+                  </>
+                )}
+                {canDelete && (
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    disabled={busy === r.char_name}
+                    onClick={() => setDeletingChar(r)}
+                    ariaLabel={`Delete character ${r.char_name}`}
+                  >
+                    Delete
+                  </Button>
+                )}
               </div>
             ),
           },
@@ -153,7 +171,7 @@ export default function Characters({ auth }: { auth: AuthState }) {
           Headless Lich sessions · status polled every {POLL_MS / 1000}s (WS pending).
         </p>
       </header>
-      
+
       {error && (
         <div style={{ marginBottom: "var(--space-4)", padding: "var(--space-3)", background: "var(--tint-bad)", border: "1px solid var(--bad)", borderRadius: "var(--radius-sm)", color: "var(--text-strong)" }}>
           <strong>Error:</strong> {error}
@@ -167,6 +185,14 @@ export default function Characters({ auth }: { auth: AuthState }) {
         ariaLabel="Lich character sessions"
         emptyState="No characters configured in entry.yaml."
         loading={loading}
+      />
+
+      <DeleteCharacterModal
+        open={Boolean(deletingChar)}
+        character={deletingChar}
+        auth={auth}
+        onClose={() => setDeletingChar(null)}
+        onDeleted={refresh}
       />
     </div>
   );

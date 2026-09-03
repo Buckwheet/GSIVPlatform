@@ -211,12 +211,44 @@ const entryAddCharacterRoute = createRoute({
   },
 });
 
+const deleteCharacterBody = z.object({
+  totp_code: z.string(),
+  dry_run: z.boolean().optional(),
+});
+
+const deletePreviewRoute = createRoute({
+  method: "get",
+  path: "/entry/account/:name/character/:char/preview",
+  request: {
+    params: z.object({ name: z.string(), char: z.string() }),
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            account: z.string(),
+            character: z.string(),
+            active: z.boolean(),
+            managed: z.boolean(),
+            in_yaml: z.boolean(),
+            in_db: z.boolean(),
+            inventory_items: z.number(),
+            has_configs: z.boolean(),
+          }),
+        },
+      },
+      description: "preflight summary for character deletion",
+    },
+  },
+});
+
 const entryDeleteCharacterRoute = createRoute({
   method: "delete",
   path: "/entry/account/:name/character/:char",
   request: {
     params: z.object({ name: z.string(), char: z.string() }),
-    body: { content: { "application/json": { schema: totpOnlyBody } } },
+    body: { content: { "application/json": { schema: deleteCharacterBody } } },
   },
   responses: {
     200: { content: { "application/json": { schema: okSchema.merge(stepsSchema) } }, description: "character deleted" },
@@ -280,6 +312,7 @@ export function createAccountsModule(store: AccountsStore, totp: Totp): Module {
       "DELETE /entry/account/:name": ["accounts.write"],
       "PATCH /entry/account/:name/password": ["accounts.write"],
       "POST /entry/account/:name/character": ["accounts.write"],
+      "GET /entry/account/:name/character/:char/preview": ["accounts.read"],
       "DELETE /entry/account/:name/character/:char": ["accounts.write"],
     },
     registerRoutes(router: OpenAPIHono, _deps: unknown): void {
@@ -353,12 +386,25 @@ export function createAccountsModule(store: AccountsStore, totp: Totp): Module {
         return c.json({ ok: true }, 200);
       });
 
+      router.openapi(deletePreviewRoute, async (c) => {
+        const preview = await store.deletePreview(c.req.valid("param").name, c.req.valid("param").char);
+        return c.json(preview, 200);
+      });
+
       router.openapi(entryDeleteCharacterRoute, async (c) => {
-        const { totp_code } = c.req.valid("json");
+        const { totp_code, dry_run } = c.req.valid("json");
         const err = requireTotp(totp, totp_code);
         if (err) return c.json({ error: err }, 403);
-        const { steps } = await store.deleteCharacterWithSteps(c.req.valid("param").name, c.req.valid("param").char);
-        if (!steps.some((s) => s.result === "ok")) return c.json({ error: "character not found anywhere", steps }, 404);
+        const { steps } = await store.deleteCharacterWithSteps(
+          c.req.valid("param").name,
+          c.req.valid("param").char,
+          Boolean(dry_run),
+        );
+        if (
+          !steps.some((s) => s.result.startsWith("ok") || s.result.startsWith("dry-run") || s.result === "not running")
+        ) {
+          return c.json({ error: "character not found anywhere", steps }, 404);
+        }
         return c.json({ ok: true, steps }, 200);
       });
 

@@ -131,6 +131,17 @@ describe("ConfigFiles capability", () => {
     expect((await cf.read("../x", "a.txt")).ok).toBe(false);
     expect((await cf.list("bad name!")).ok).toBe(false);
   });
+
+  it("archive moves character config dir into .archived", async () => {
+    mkdirSync(join(GSIV, "Archivable"), { recursive: true });
+    writeFileSync(join(GSIV, "Archivable", "config.yaml"), "settings");
+    const res = await cf.archive("Archivable");
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.archived).toBe(true);
+    expect(existsSync(join(GSIV, "Archivable"))).toBe(false);
+    if (res.path) expect(existsSync(res.path)).toBe(true);
+  });
 });
 
 function readdirNames(dir: string): string[] {
