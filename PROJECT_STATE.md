@@ -24,13 +24,19 @@ Implement end-to-end character deletion pipeline across backend (systemd, watchd
 - Integrated into frontend pages:
   - `frontend/src/pages/characters/index.tsx`: Added `Delete` action button (`variant="danger"`) in the character actions column (guarded by `accounts.write`) with modal trigger.
   - `frontend/src/pages/accounts/index.tsx`: Added individual `Delete` action buttons next to each stale character in the roster issues banner.
+- PR & Deployment:
+  - Created PR #58 and merged into `main` (`79ee241`).
+  - Built backend and frontend production distributions.
+  - Deployed to OVH production server (`ubuntu@51.68.235.144`).
+  - Successfully restarted `gsiv-platform.service` and verified live assets via Caddy (`HTTP/2 200`).
 
 ## Commands run + results
-- `npm test` in `backend`: 49 test files passed, 376 tests passed (0 failures).
-- `npm run typecheck` in `backend`: 0 type errors (`tsc --noEmit`).
-- `npm run lint` in `backend`: Biome check passed with 0 errors.
-- `npm run build` in `frontend`: Vite client built cleanly in 141ms (`dist/index.html` + chunks).
-- `npm run typecheck` in `frontend`: 0 type errors.
+- `git push -u origin feat/character-deletion`: Pushed branch.
+- `gh pr create` + `gh pr merge 58 --merge`: Merged PR #58 into `main`.
+- `npm run build` in `backend`: Built `dist/`.
+- `npm run build` in `frontend`: Built `dist/assets/index-CwNoeldM.js`.
+- `scp` + `ssh` deploy: Deployed to `/opt/gsiv-platform/` and restarted `gsiv-platform.service`.
+- Verified live service: `active`, journal logged `gsiv-platform listening on :3102`, and bundle `index-CwNoeldM.js` returned `HTTP/2 200` with `text/javascript`.
 
 ## Files touched
 - `backend/src/core/config-files.ts`
@@ -48,6 +54,6 @@ Implement end-to-end character deletion pipeline across backend (systemd, watchd
 - `PROJECT_STATE.md`
 
 ## Next 3 actions
-- [ ] Commit changes to `feat/character-deletion` branch in `GSIVPlatform`.
-- [ ] Present feature walkthrough and verification steps to user.
-- [ ] Merge to main when user approves and deploy to production server.
+- [x] Merge PR #58 to `main`.
+- [x] Deploy build to production server and restart `gsiv-platform.service`.
+- [ ] Monitor production logs and verify character deletion workflow in the live browser UI.
