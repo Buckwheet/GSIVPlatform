@@ -1,22 +1,49 @@
 ﻿# Project State
 
 ## Goal
-Add Play.net store scraper to `Playdotnet` capability, implement SimuCoins-only scan and balance retrieval in `AccountsStore` and API, add a dedicated "SimuCoins" tab to the Look Up page on the dashboard, and run a scan to capture SimuCoin balances across all accounts.
+Implement SimuCoins store balance scraping from Play.net, integrate balance scanning and retrieval in the accounts module, add a dedicated SimuCoins tab to the Look Up dashboard page, deploy to production, and run a full SimuCoins scan across all accounts.
 
 ## What changed
-- Beginning SimuCoins feature implementation across core capability, accounts store, accounts API routes, and Look Up frontend tab.
+- Enhanced `backend/src/core/playdotnet.ts`:
+  - Added `scrapeStore(account, password, gameCode)` to login to `store.play.net/Account/SignIn` and extract SimuCoin balance (`.balance > span`) and next reward message (`.RewardMessage`).
+  - Added unit tests in `backend/tests/core/playdotnet.test.ts` (9/9 passed).
+- Enhanced `backend/src/core/entry-yaml.ts`:
+  - Added `listAccountNames()` to return all accounts declared in `entry.yaml`.
+- Enhanced `backend/src/modules/accounts/store.ts`:
+  - Updated `saveScan` to persist `store_balance` and `store_reward_next` using `COALESCE`.
+  - Added `updateStoreBalance`, `getSimucoins`, and `scanSimucoins(targetAccount?)` to scan and store balances.
+- Added API routes in `backend/src/modules/accounts/index.ts`:
+  - `GET /api/modules/accounts/simucoins`: Returns all account SimuCoin balances and next reward dates (`accounts.read`).
+  - `POST /api/modules/accounts/simucoins/scan`: Triggers targeted store scrape across all or a single account (`accounts.write`).
+- Added "SimuCoins" Tab to `frontend/src/pages/lookup/index.tsx`:
+  - Dedicated tab alongside Overview, Bank, Resources, Tickets, Items.
+  - Displays summary cards: Total SimuCoins and Accounts with SimuCoins.
+  - Interactive table showing Account, SimuCoins (formatted with `SC`), Next Reward date, and Last Checked relative timestamp.
+  - One-click "Scan SimuCoins" button to refresh balances on demand.
+  - Filterable by Account dropdown and search input.
+- Deployed to production (`51.68.235.144`):
+  - Updated backend distribution, restarted `gsiv-platform.service` (listening on `:3102`).
+  - Updated frontend distribution and verified live bundle `index-BgF70Qjp.js` (`HTTP/2 200`, `text/javascript`).
+  - Initiated live scan across all 36 accounts: successfully retrieved balances across 19 active accounts totaling **74,901 SimuCoins**.
 
 ## Commands run + results
-- Tested `store.play.net/Account/SignIn` live with node on production for `BUTCHERJ4`: successfully acquired CSRF token, authenticated, and retrieved balance (3,977 SC) and reward message.
+- `npm test`: 49 test files passed, 383/383 tests passed.
+- `npm run typecheck` + `npm run lint`: Passed with 0 errors.
+- `npm run build`: Backend and frontend compiled cleanly.
+- `POST /api/modules/accounts/simucoins/scan`: Scanned 36 accounts, saved 19 accounts with positive balances.
 
 ## Files touched
-- `backend/src/core/playdotnet.ts` (in progress)
-- `backend/src/modules/accounts/store.ts` (in progress)
-- `backend/src/modules/accounts/index.ts` (in progress)
-- `frontend/src/pages/lookup/index.tsx` (in progress)
+- `backend/src/core/playdotnet.ts`
+- `backend/src/core/entry-yaml.ts`
+- `backend/src/modules/accounts/store.ts`
+- `backend/src/modules/accounts/index.ts`
+- `backend/tests/core/playdotnet.test.ts`
+- `backend/tests/modules/accounts/store.test.ts`
+- `backend/tests/modules/accounts/routes.test.ts`
+- `frontend/src/pages/lookup/index.tsx`
 - `PROJECT_STATE.md`
 
 ## Next 3 actions
-- [ ] Implement `scrapeStore` in `Playdotnet` with unit tests.
-- [ ] Implement `scanSimucoins` and SimuCoins routes in `AccountsStore` and `accounts` module.
-- [ ] Add SimuCoins tab to Look Up page and trigger live SimuCoins scan on production.
+- [x] Implement Play.net store scraper and unit tests.
+- [x] Add SimuCoins tab to Look Up page and wire scan endpoints.
+- [x] Deploy to production and run live scan across all accounts.
