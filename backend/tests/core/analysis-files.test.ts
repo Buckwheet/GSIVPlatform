@@ -114,4 +114,20 @@ describe("AnalysisFiles capability", () => {
     expect(missing.ok).toBe(true);
     if (missing.ok) expect(missing.file).toBeNull();
   });
+
+  it("hasCharacterLogs and deleteCharacterLogs manage historical character logs", async () => {
+    // Setup invdb-log and mejora-log
+    mkdirSync(join(DATA, "invdb-logs"), { recursive: true });
+    writeFileSync(join(DATA, "invdb-logs", "fisternar.log"), "inv log");
+    mkdirSync(join(DATA, "mejora-logs", "GSIV-Fisternar"), { recursive: true });
+    writeFileSync(join(DATA, "mejora-logs", "GSIV-Fisternar", "combat.log"), "combat");
+
+    expect(af.hasCharacterLogs("Fisternar")).toBe(true);
+    expect(af.hasCharacterLogs("Ghost")).toBe(false);
+
+    const del = await af.deleteCharacterLogs("Fisternar");
+    expect(del.ok).toBe(true);
+    expect(del.deleted.length).toBeGreaterThanOrEqual(3); // lich log dir, invdb log, mejora dir
+    expect(af.hasCharacterLogs("Fisternar")).toBe(false);
+  });
 });

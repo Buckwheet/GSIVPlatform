@@ -1,3 +1,4 @@
+import type { AnalysisFiles } from "../../core/analysis-files.js";
 import type { ConfigFiles } from "../../core/config-files.js";
 import type { CoreDb } from "../../core/db.js";
 import type { EntryYaml } from "../../core/entry-yaml.js";
@@ -94,6 +95,7 @@ export class AccountsStore {
       systemd?: Systemd;
       kv?: KV;
       configFiles?: ConfigFiles;
+      analysisFiles?: AnalysisFiles;
     } = {},
   ) {
     db.migrate("accounts", MIGRATIONS);
@@ -481,6 +483,7 @@ export class AccountsStore {
     in_db: boolean;
     inventory_items: number;
     has_configs: boolean;
+    has_logs: boolean;
   }> {
     const key = accountName.toUpperCase();
     const inYaml = this.safeYamlChars().some(
@@ -525,6 +528,11 @@ export class AccountsStore {
       }
     }
 
+    let hasLogs = false;
+    if (this.opts.analysisFiles) {
+      hasLogs = this.opts.analysisFiles.hasCharacterLogs(charName);
+    }
+
     return {
       account: key,
       character: charName,
@@ -534,10 +542,11 @@ export class AccountsStore {
       in_db: inDb,
       inventory_items: inventoryItems,
       has_configs: hasConfigs,
+      has_logs: hasLogs,
     };
   }
 
-  /** Delete a character: systemd stop + KV eviction + entry.yaml + scan db + inv.db3 + config archive, with per-step results. */
+  /** Delete a character: systemd stop + KV eviction + entry.yaml + scan db + inv.db3 + config archive + log purge, with per-step results. */
   async deleteCharacterWithSteps(
     accountName: string,
     charName: string,
@@ -637,7 +646,31 @@ export class AccountsStore {
       }
     }
 
-    // 7. Audit log & emit
+    // 7. Delete historical logs
+    if (this.opts.analysisFiles) {
+      try {
+        if (dryRun) {
+          steps.push({ action: `Delete historical logs for ${charName}`, result: "dry-run" });
+        } else {
+          const l = await this.opts.analysisFiles.deleteCharacterLogs(charName);
+          steps.push({
+            action: `Delete historical logs for ${charName}`,
+            result: l.ok
+              ? l.deleted.length > 0
+                ? `ok (${l.deleted.length} log locations removed)`
+                : "none found"
+              : "skipped",
+          });
+        }
+      } catch (err) {
+        steps.push({
+          action: `Delete historical logs for ${charName}`,
+          result: `skipped: ${(err as Error).message}`,
+        });
+      }
+    }
+
+    // 8. Audit log & emit
     if (!dryRun) {
       this.opts.log?.("character_delete", charName, `Deleted ${charName} from ${key}`, "accounts");
       this.opts.emit?.("character_deleted", { account: key, character: charName });

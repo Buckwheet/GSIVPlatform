@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { validateCharName } from "./systemd.js";
 
@@ -121,6 +121,63 @@ export class AnalysisFiles {
       .slice(-count)
       .filter((l) => !l.startsWith("<pushStream") && !l.startsWith("<popStream"));
     return { ok: true, lines: tail, file: join(latest).split(/[/\\]/).pop() ?? null };
+  }
+
+  /** Check if any historical logs exist for a character (game logs, invdb-logs, or mejora-logs). */
+  hasCharacterLogs(char: string): boolean {
+    try {
+      validateCharName(char);
+    } catch {
+      return false;
+    }
+    const cased = char.charAt(0).toUpperCase() + char.slice(1).toLowerCase();
+    const lichLogDir = join(this.opts.logDir, `${LOG_DIR_PREFIX}${cased}`);
+    if (existsSync(lichLogDir)) return true;
+
+    const invLog = join(this.opts.dataDir, "invdb-logs", `${char.toLowerCase()}.log`);
+    if (existsSync(invLog)) return true;
+
+    for (const prefix of [`GSIV-${cased}`, cased]) {
+      const mejoraDir = join(this.opts.dataDir, "mejora-logs", prefix);
+      if (existsSync(mejoraDir)) return true;
+    }
+    return false;
+  }
+
+  /** Delete historical logs for a character (Lich game logs, invdb-logs, and mejora-logs). */
+  async deleteCharacterLogs(char: string): Promise<{ ok: boolean; deleted: string[] }> {
+    try {
+      validateCharName(char);
+    } catch {
+      return { ok: false, deleted: [] };
+    }
+    const cased = char.charAt(0).toUpperCase() + char.slice(1).toLowerCase();
+    const deleted: string[] = [];
+
+    // 1. Lich game logs: /opt/gs4sd/lich5/logs/GSIV-<Char>
+    const lichLogDir = join(this.opts.logDir, `${LOG_DIR_PREFIX}${cased}`);
+    if (existsSync(lichLogDir)) {
+      rmSync(lichLogDir, { recursive: true, force: true });
+      deleted.push(lichLogDir);
+    }
+
+    // 2. Invdb log: /opt/gs4sd/data/invdb-logs/<char>.log
+    const invLog = join(this.opts.dataDir, "invdb-logs", `${char.toLowerCase()}.log`);
+    if (existsSync(invLog)) {
+      rmSync(invLog, { force: true });
+      deleted.push(invLog);
+    }
+
+    // 3. Mejora logs: /opt/gs4sd/data/mejora-logs/GSIV-<Char> or mejora-logs/<Char>
+    for (const prefix of [`GSIV-${cased}`, cased]) {
+      const mejoraDir = join(this.opts.dataDir, "mejora-logs", prefix);
+      if (existsSync(mejoraDir)) {
+        rmSync(mejoraDir, { recursive: true, force: true });
+        deleted.push(mejoraDir);
+      }
+    }
+
+    return { ok: true, deleted };
   }
 
   private readOr(name: string, fallback: string): string {

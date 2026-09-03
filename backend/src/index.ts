@@ -126,15 +126,24 @@ registry.register(
     }),
   }),
 );
+// Config & Analysis capabilities (shared by accounts, config, and analysis modules)
+const entryDir = dirname(process.env.ENTRY_YAML_PATH || "/opt/gs4sd/lich5/data/entry.yaml");
+const configFiles = new ConfigFiles({
+  gsivDir: process.env.GSIV_DATA_DIR || join(entryDir, "GSIV"),
+  gstDir: process.env.GST_DATA_DIR || join(entryDir, "GST"),
+});
+const analysisFiles = new AnalysisFiles({
+  dataDir: process.env.ANALYSIS_DATA_DIR || "/opt/gs4sd/data",
+  logDir: process.env.LICH_LOG_DIR || "/opt/gs4sd/lich5/logs",
+});
+
 const accountsStore = new AccountsStore(db, new EntryYaml(), new Ruby(), new Sge(), new InvDb(), new Playdotnet(), {
   emit: (type, payload) => eventBus.emit(type, payload),
   log: (type, char, detail, source) => eventLog.log(type, char, detail, source),
   systemd: new Systemd(),
   kv,
-  configFiles: new ConfigFiles({
-    gsivDir: process.env.GSIV_DATA_DIR || "/opt/gs4sd/data/GSIV",
-    gstDir: process.env.GST_DATA_DIR || "/opt/gs4sd/data/GST",
-  }),
+  configFiles,
+  analysisFiles,
 });
 const totp = new Totp();
 registry.register(createAccountsModule(accountsStore, totp));
@@ -168,18 +177,9 @@ const scansStore = new ScansStore(
 registry.register(createScansModule(scansStore));
 
 // Config: lich.db3 (go2/eherbs) + lich config dirs via review-gated capabilities.
-const entryDir = dirname(process.env.ENTRY_YAML_PATH || "/opt/gs4sd/lich5/data/entry.yaml");
-const configFiles = new ConfigFiles({
-  gsivDir: process.env.GSIV_DATA_DIR || join(entryDir, "GSIV"),
-  gstDir: join(entryDir, "GST"),
-});
 registry.register(createConfigModule(new LichDb(), configFiles));
 
 // Analysis: data/log dirs + fixed server scripts via review-gated capabilities.
-const analysisFiles = new AnalysisFiles({
-  dataDir: process.env.ANALYSIS_DATA_DIR || "/opt/gs4sd/data",
-  logDir: process.env.LICH_LOG_DIR || "/opt/gs4sd/lich5/logs",
-});
 registry.register(createAnalysisModule(analysisFiles, new ScriptRunner()));
 
 registry.validate();

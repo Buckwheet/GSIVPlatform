@@ -2,6 +2,7 @@ import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
+import type { AnalysisFiles } from "../../../src/core/analysis-files.js";
 import type { ConfigFiles } from "../../../src/core/config-files.js";
 import { CoreDb } from "../../../src/core/db.js";
 import { EntryYaml } from "../../../src/core/entry-yaml.js";
@@ -99,6 +100,7 @@ describe("AccountsStore", () => {
       systemd?: Systemd;
       kv?: KV;
       configFiles?: ConfigFiles;
+      analysisFiles?: AnalysisFiles;
     } = {},
   ) {
     const db = new CoreDb(":memory:");
@@ -120,6 +122,7 @@ describe("AccountsStore", () => {
         systemd: overrides.systemd,
         kv: overrides.kv,
         configFiles: overrides.configFiles,
+        analysisFiles: overrides.analysisFiles,
       },
     );
     return { db, store, emitted, logged };
@@ -586,10 +589,15 @@ describe("AccountsStore", () => {
           files: [{ path: "bigshot.yaml", size: 50, modified: "now" }],
         }),
       };
+      const mockAnalysisFiles = {
+        hasCharacterLogs: () => true,
+        deleteCharacterLogs: async () => ({ ok: true, deleted: ["/opt/gs4sd/lich5/logs/GSIV-Fisternar"] }),
+      };
       const { db, store } = makeStore({
         systemd: mockSystemd as unknown as Systemd,
         kv: mockKv as unknown as KV,
         configFiles: mockConfigFiles as unknown as ConfigFiles,
+        analysisFiles: mockAnalysisFiles as unknown as AnalysisFiles,
       });
 
       // Insert character in DB
@@ -609,6 +617,7 @@ describe("AccountsStore", () => {
         in_db: true,
         inventory_items: 42,
         has_configs: true,
+        has_logs: true,
       });
     });
 
@@ -647,11 +656,17 @@ describe("AccountsStore", () => {
         },
       };
 
+      const mockAnalysisFiles = {
+        hasCharacterLogs: () => true,
+        deleteCharacterLogs: async () => ({ ok: true, deleted: ["/opt/gs4sd/lich5/logs/GSIV-Fisternar"] }),
+      };
+
       const fakeInv = new FakeInvDb();
       const { db, store, emitted, logged } = makeStore({
         systemd: mockSystemd as unknown as Systemd,
         kv: mockKv as unknown as KV,
         configFiles: mockConfigFiles as unknown as ConfigFiles,
+        analysisFiles: mockAnalysisFiles as unknown as AnalysisFiles,
         invDb: fakeInv,
       });
 
@@ -681,6 +696,7 @@ describe("AccountsStore", () => {
         "ok", // DB removed
         "ok (1 chars, 0 items)", // inv.db3 cascade
         "ok", // config archived
+        "ok (1 log locations removed)", // historical logs deleted
       ]);
     });
 

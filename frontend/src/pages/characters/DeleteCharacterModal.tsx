@@ -1,4 +1,4 @@
-﻿import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { api, ApiError } from "../../core/api";
 import type { AuthState } from "../../core/auth";
 import { Button, Input, Modal, useToast } from "../../components";
@@ -12,6 +12,7 @@ interface DeletePreview {
   in_db: boolean;
   inventory_items: number;
   has_configs: boolean;
+  has_logs: boolean;
 }
 
 export interface DeleteCharacterModalProps {
@@ -60,6 +61,7 @@ export function DeleteCharacterModal({
           in_db: true,
           inventory_items: 0,
           has_configs: false,
+          has_logs: false,
         });
       })
       .finally(() => setLoadingPreview(false));
@@ -140,6 +142,14 @@ export function DeleteCharacterModal({
                   : preview?.has_configs
                     ? "Configs will be archived to .archived/"
                     : "No config files found"}
+              </li>
+              <li>
+                <strong>Historical logs:</strong>{" "}
+                {loadingPreview
+                  ? "Checking..."
+                  : preview?.has_logs
+                    ? "Game logs and scanner logs will be permanently deleted"
+                    : "No log files found"}
               </li>
             </ul>
           </div>
