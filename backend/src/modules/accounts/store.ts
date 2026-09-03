@@ -268,8 +268,20 @@ export class AccountsStore {
       console.error(`play.net scrape failed for ${accountName}:`, (err as Error).message);
     }
 
+    let storeBalance: number | null = null;
+    let storeRewardNext: string | null = null;
+    if (authStatus === "ok") {
+      try {
+        const store = await this.playnet.scrapeStore(accountName, decrypted.plain, gameCode);
+        storeBalance = store.balance;
+        storeRewardNext = store.rewardNext;
+      } catch (err) {
+        console.error(`store scrape failed for ${accountName}:`, (err as Error).message);
+      }
+    }
+
     const noActiveChars = authStatus === "ok" && characters.every((c) => c.status !== "active") ? 1 : 0;
-    this.saveScan(accountName, authStatus, authError, characters, noActiveChars);
+    this.saveScan(accountName, authStatus, authError, characters, noActiveChars, storeBalance, storeRewardNext);
     return { ok: true, authStatus, authError };
   }
 
@@ -706,14 +718,22 @@ export class AccountsStore {
     authError: string | null,
     characters: ScanCharacterRow[],
     noActiveChars: number,
+    storeBalance: number | null = null,
+    storeRewardNext: string | null = null,
   ): void {
     this.db
       .prepare(
         `INSERT INTO accounts (account_name, auth_status, auth_error, no_active_chars, store_balance, store_reward_next, last_scan)
-         VALUES (?, ?, ?, ?, NULL, NULL, ?)
-         ON CONFLICT(account_name) DO UPDATE SET auth_status=excluded.auth_status, auth_error=excluded.auth_error, no_active_chars=excluded.no_active_chars, last_scan=excluded.last_scan`,
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(account_name) DO UPDATE SET
+           auth_status=excluded.auth_status,
+           auth_error=excluded.auth_error,
+           no_active_chars=excluded.no_active_chars,
+           store_balance=COALESCE(excluded.store_balance, accounts.store_balance),
+           store_reward_next=COALESCE(excluded.store_reward_next, accounts.store_reward_next),
+           last_scan=excluded.last_scan`,
       )
-      .run(accountName, authStatus, authError, noActiveChars, Date.now());
+      .run(accountName, authStatus, authError, noActiveChars, storeBalance, storeRewardNext, Date.now());
     if (noActiveChars === 1) {
       this.opts.emit?.("no_chars_alert", {
         account: accountName,
@@ -778,6 +798,86 @@ export class AccountsStore {
         );
       }
     }
+  }
+
+  /** Update SimuCoin store balance and next reward message for an account. */
+  updateStoreBalance(accountName: string, balance: number | null, rewardNext: string | null): void {
+    const key = accountName.toUpperCase();
+    this.db
+      .prepare(
+        `INSERT INTO accounts (account_name, auth_status, auth_error, no_active_chars, store_balance, store_reward_next, last_scan)
+         VALUES (?, 'ok', NULL, 0, ?, ?, ?)
+         ON CONFLICT(account_name) DO UPDATE SET
+           store_balance = excluded.store_balance,
+           store_reward_next = excluded.store_reward_next,
+           last_scan = excluded.last_scan`,
+      )
+      .run(key, balance, rewardNext, Date.now());
+  }
+
+  /** List SimuCoin store balances for all accounts. */
+  getSimucoins(): {
+    account_name: string;
+    store_balance: number | null;
+    store_reward_next: string | null;
+    last_scan: number | null;
+  }[] {
+    return this.db
+      .prepare(
+        `SELECT account_name, store_balance, store_reward_next, last_scan
+         FROM accounts
+         ORDER BY account_name`,
+      )
+      .all() as {
+      account_name: string;
+      store_balance: number | null;
+      store_reward_next: string | null;
+      last_scan: number | null;
+    }[];
+  }
+
+  /** Run a targeted scan of JUST the SimuCoin store balances for all accounts or a single account. */
+  async scanSimucoins(targetAccount?: string): Promise<{
+    ok: boolean;
+    total: number;
+    results: { account: string; ok: boolean; balance: number | null; rewardNext: string | null; error?: string }[];
+  }> {
+    const targets = targetAccount ? [targetAccount.toUpperCase()] : this.yaml.listAccountNames();
+
+    const results: {
+      account: string;
+      ok: boolean;
+      balance: number | null;
+      rewardNext: string | null;
+      error?: string;
+    }[] = [];
+    const delayMs = this.opts.delayMs ?? 1000;
+
+    for (const acct of targets) {
+      const decrypted = await this.ruby.decryptPassword(acct, this.yaml.path);
+      if (!decrypted.ok) {
+        results.push({
+          account: acct,
+          ok: false,
+          balance: null,
+          rewardNext: null,
+          error: `decrypt error: ${decrypted.error}`,
+        });
+        continue;
+      }
+      try {
+        const store = await this.playnet.scrapeStore(acct, decrypted.plain);
+        this.updateStoreBalance(acct, store.balance, store.rewardNext);
+        results.push({ account: acct, ok: true, balance: store.balance, rewardNext: store.rewardNext });
+      } catch (err) {
+        results.push({ account: acct, ok: false, balance: null, rewardNext: null, error: (err as Error).message });
+      }
+      if (targets.length > 1) {
+        await sleep(delayMs);
+      }
+    }
+
+    return { ok: true, total: targets.length, results };
   }
 }
 

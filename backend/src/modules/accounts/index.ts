@@ -98,6 +98,58 @@ const scanOneRoute = createRoute({
   },
 });
 
+const simucoinItemSchema = z.object({
+  account_name: z.string(),
+  store_balance: z.number().nullable(),
+  store_reward_next: z.string().nullable(),
+  last_scan: z.number().nullable(),
+});
+
+const simucoinsRoute = createRoute({
+  method: "get",
+  path: "/simucoins",
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({ simucoins: z.array(simucoinItemSchema) }),
+        },
+      },
+      description: "simucoin balances across accounts",
+    },
+  },
+});
+
+const scanSimucoinsRoute = createRoute({
+  method: "post",
+  path: "/simucoins/scan",
+  request: {
+    query: z.object({ account: z.string().optional() }),
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            ok: z.boolean(),
+            total: z.number(),
+            results: z.array(
+              z.object({
+                account: z.string(),
+                ok: z.boolean(),
+                balance: z.number().nullable(),
+                rewardNext: z.string().nullable(),
+                error: z.string().optional(),
+              }),
+            ),
+          }),
+        },
+      },
+      description: "simucoins scan result",
+    },
+  },
+});
+
 const totpStatusRoute = createRoute({
   method: "get",
   path: "/totp/status",
@@ -314,6 +366,8 @@ export function createAccountsModule(store: AccountsStore, totp: Totp): Module {
       "POST /entry/account/:name/character": ["accounts.write"],
       "GET /entry/account/:name/character/:char/preview": ["accounts.read"],
       "DELETE /entry/account/:name/character/:char": ["accounts.write"],
+      "GET /simucoins": ["accounts.read"],
+      "POST /simucoins/scan": ["accounts.write"],
     },
     registerRoutes(router: OpenAPIHono, _deps: unknown): void {
       // spec building calls registerRoutes with empty deps — logging is optional there
@@ -331,6 +385,14 @@ export function createAccountsModule(store: AccountsStore, totp: Totp): Module {
         const res = await store.scanOne(c.req.valid("param").name);
         if (!res.ok) return c.json({ error: res.error }, 404);
         return c.json({ ok: true }, 200);
+      });
+      router.openapi(simucoinsRoute, (c) => {
+        return c.json({ simucoins: store.getSimucoins() });
+      });
+      router.openapi(scanSimucoinsRoute, async (c) => {
+        const { account } = c.req.valid("query");
+        const res = await store.scanSimucoins(account);
+        return c.json(res);
       });
 
       router.openapi(totpStatusRoute, async (c) => c.json({ setup: totp.isSetup() }));

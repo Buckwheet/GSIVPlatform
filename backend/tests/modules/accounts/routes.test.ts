@@ -327,4 +327,18 @@ describe("accounts module routes", () => {
     expect(body.ok).toBe(true);
     expect(Array.isArray(body.steps)).toBe(true);
   });
+
+  it("GET /simucoins and POST /simucoins/scan work with proper scopes", async () => {
+    const app = makeApp("limited:tok:accounts.read,accounts.write");
+    const getRes = await app.request("/api/modules/accounts/simucoins", { headers: auth });
+    expect(getRes.status).toBe(200);
+    const getBody = (await getRes.json()) as { simucoins: unknown[] };
+    expect(Array.isArray(getBody.simucoins)).toBe(true);
+
+    const scanRes = await post(app, "/api/modules/accounts/simucoins/scan?account=BUCKWHEET", {});
+    expect(scanRes.status).toBe(200);
+    const scanBody = (await scanRes.json()) as { ok: boolean; total: number; results: unknown[] };
+    expect(scanBody.ok).toBe(true);
+    expect(scanBody.total).toBe(1);
+  });
 });

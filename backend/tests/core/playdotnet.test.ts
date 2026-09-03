@@ -83,3 +83,61 @@ describe("Playdotnet.listInactiveCharacters", () => {
     expect(logins).toBe(2);
   });
 });
+
+describe("Playdotnet.scrapeStore", () => {
+  const SIGNIN_HTML = `<html><form><input name="__RequestVerificationToken" value="CSRF_TOKEN_123"/></form></html>`;
+  const STORE_SUCCESS_HTML = `<html>
+    <div id="login">Welcome, BUCKWHEET</div>
+    <div class="balance"><span>3,977</span></div>
+    <div class="RewardMessage">Next Subscription Bonus in 10d, 3h</div>
+  </html>`;
+
+  it("extracts SimuCoin balance and next reward on successful login", async () => {
+    const calls: { url: string; init?: unknown }[] = [];
+    const fetchFn: FetchFn = async (url, init) => {
+      calls.push({ url, init });
+      if (init && (init as { method?: string }).method === "POST") {
+        return new Response(STORE_SUCCESS_HTML, { status: 200 });
+      }
+      return new Response(SIGNIN_HTML, { status: 200 });
+    };
+
+    const res = await new Playdotnet(fetchFn).scrapeStore("BUCKWHEET", "SECRET");
+    expect(res).toEqual({
+      balance: 3977,
+      rewardNext: "Next Subscription Bonus in 10d, 3h",
+    });
+
+    const postCall = calls.find((c) => (c.init as { method?: string } | undefined)?.method === "POST");
+    expect(postCall).toBeDefined();
+    const body = String((postCall?.init as { body?: string })?.body ?? "");
+    expect(body).toContain("UserName=BUCKWHEET");
+    expect(body).toContain("Password=SECRET");
+    expect(body).toContain("__RequestVerificationToken=CSRF_TOKEN_123");
+  });
+
+  it("throws when CSRF token is missing", async () => {
+    const fetchFn: FetchFn = async () => new Response("<html><body>No form</body></html>", { status: 200 });
+    await expect(new Playdotnet(fetchFn).scrapeStore("BUCKWHEET", "SECRET")).rejects.toThrow("no CSRF token");
+  });
+
+  it("throws store_login_failed when redirected back to sign in", async () => {
+    const fetchFn: FetchFn = async (_url, init) => {
+      if (init && (init as { method?: string }).method === "POST") {
+        return new Response('<html><div id="login">sign in to your account</div></html>', { status: 200 });
+      }
+      return new Response(SIGNIN_HTML, { status: 200 });
+    };
+    await expect(new Playdotnet(fetchFn).scrapeStore("BUCKWHEET", "SECRET")).rejects.toThrow("store_login_failed");
+  });
+
+  it("throws account_cancelled when titlebar indicates cancelled", async () => {
+    const fetchFn: FetchFn = async (_url, init) => {
+      if (init && (init as { method?: string }).method === "POST") {
+        return new Response('<html><div class="smu-titlebar">Account Cancelled</div></html>', { status: 200 });
+      }
+      return new Response(SIGNIN_HTML, { status: 200 });
+    };
+    await expect(new Playdotnet(fetchFn).scrapeStore("BUCKWHEET", "SECRET")).rejects.toThrow("account_cancelled");
+  });
+});

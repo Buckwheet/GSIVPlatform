@@ -47,6 +47,13 @@ interface LumnisRow {
   last_schedule: string;
 }
 
+interface SimucoinRow {
+  account_name: string;
+  store_balance: number | null;
+  store_reward_next: string | null;
+  last_scan: number | null;
+}
+
 interface ResourceRow {
   character: string;
   account: string;
@@ -152,7 +159,7 @@ const ITEM_EXAMPLES = [
 const fmt = (n: number) => n.toLocaleString("en-US");
 
 export default function Lookup({ auth }: { auth: AuthState }) {
-  const [activeTab, setActiveTab] = useState<"overview" | "bank" | "resources" | "tickets" | "items">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "bank" | "resources" | "tickets" | "simucoins" | "items">("overview");
   const [rows, setRows] = useState<BankRow[]>([]);
   const [resRows, setResRows] = useState<ResourceRow[]>([]);
   const [resLoaded, setResLoaded] = useState(false);
@@ -160,6 +167,10 @@ export default function Lookup({ auth }: { auth: AuthState }) {
   const [lumRows, setLumRows] = useState<LumnisRow[]>([]);
   const [tktLoaded, setTktLoaded] = useState(false);
   const [loadingTkt, setLoadingTkt] = useState(false);
+  const [simuRows, setSimuRows] = useState<SimucoinRow[]>([]);
+  const [simuLoaded, setSimuLoaded] = useState(false);
+  const [loadingSimu, setLoadingSimu] = useState(false);
+  const [scanningSimu, setScanningSimu] = useState(false);
   const [itemRows, setItemRows] = useState<ItemRow[]>([]);
   const [itemLoaded, setItemLoaded] = useState(false);
   const [itemLoading, setItemLoading] = useState(false);
@@ -227,6 +238,26 @@ export default function Lookup({ auth }: { auth: AuthState }) {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, tktLoaded, auth]);
+
+  useEffect(() => {
+    if (activeTab !== "simucoins" || simuLoaded) return;
+    (async () => {
+      setLoadingSimu(true);
+      try {
+        const data = await api<{ simucoins: SimucoinRow[] }>("/modules/accounts/simucoins", auth);
+        setSimuRows(data.simucoins);
+        setError(null);
+      } catch (err) {
+        const msg = (err as Error).message;
+        setError(msg);
+        addToast({ tone: "bad", title: "SimuCoins Data Failed", message: msg });
+      } finally {
+        setSimuLoaded(true);
+        setLoadingSimu(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, simuLoaded, auth]);
 
   useEffect(() => {
     if (activeTab !== "resources" || resLoaded) return;
@@ -465,6 +496,15 @@ export default function Lookup({ auth }: { auth: AuthState }) {
     );
   }, [overview, q, account]);
 
+  const filteredSimu = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return simuRows.filter(
+      (r) =>
+        (needle === "" || r.account_name.toLowerCase().includes(needle)) &&
+        (account === "all" || r.account_name.toLowerCase() === account.toLowerCase()),
+    );
+  }, [simuRows, q, account]);
+
   const grandTotal = filtered.reduce((s, r) => s + r.total, 0);
 
   const columns = useMemo<Column<DisplayRow>[]>(() => {
@@ -629,6 +669,47 @@ export default function Lookup({ auth }: { auth: AuthState }) {
       ]
     : [];
 
+  const simuColumns = useMemo<Column<SimucoinRow>[]>(
+    () => [
+      {
+        key: "account_name",
+        header: "Account",
+        sortable: true,
+        render: (r) => <strong>{r.account_name}</strong>,
+      },
+      {
+        key: "store_balance",
+        header: "SimuCoins",
+        sortable: true,
+        align: "right",
+        render: (r) =>
+          r.store_balance != null ? (
+            <strong style={{ color: "var(--accent)" }}>{fmt(r.store_balance)} SC</strong>
+          ) : (
+            <span className="muted">–</span>
+          ),
+      },
+      {
+        key: "store_reward_next",
+        header: "Next Reward",
+        sortable: true,
+        render: (r) => r.store_reward_next || <span className="muted">–</span>,
+      },
+      {
+        key: "last_scan",
+        header: "Last Checked",
+        sortable: true,
+        render: (r) =>
+          r.last_scan ? (
+            relAgo(Math.floor(Date.now() / 1000) - Math.floor(r.last_scan / 1000))
+          ) : (
+            <span className="muted">Never</span>
+          ),
+      },
+    ],
+    [],
+  );
+
   const overviewColumns = useMemo<Column<OverviewChar>[]>(
     () => [
       { key: "character", header: "Character", sortable: true, render: charCol },
@@ -676,10 +757,11 @@ export default function Lookup({ auth }: { auth: AuthState }) {
           { id: "bank", label: "Bank" },
           { id: "resources", label: "Resources" },
           { id: "tickets", label: "Tickets" },
+          { id: "simucoins", label: "SimuCoins" },
           { id: "items", label: "Items" },
         ]}
         activeId={activeTab}
-        onChange={(id) => setActiveTab(id as "overview" | "bank" | "resources" | "tickets" | "items")}
+        onChange={(id) => setActiveTab(id as "overview" | "bank" | "resources" | "tickets" | "simucoins" | "items")}
         ariaLabel="Lookup sections"
       />
       <p className="muted" style={{ margin: "var(--space-2) 0 var(--space-4) 0" }}>
@@ -969,6 +1051,71 @@ export default function Lookup({ auth }: { auth: AuthState }) {
           <p className="muted" style={{ marginTop: "var(--space-3)", textAlign: "right" }}>
             {filteredItems.length} {filteredItems.length === 1 ? "result" : "results"}
             {filteredItems.length === 500 ? " · showing the first 500 — narrow your search with filters" : ""}
+          </p>
+        </>
+      ) : activeTab === "simucoins" ? (
+        <>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--space-3)" }}>
+            <h2 className="page-header-title" style={{ fontSize: "var(--font-size-lg)", margin: 0 }}>
+              SimuCoins
+            </h2>
+            {can(auth, ["accounts.write"]) && (
+              <Button
+                variant="primary"
+                size="sm"
+                loading={scanningSimu}
+                onClick={async () => {
+                  setScanningSimu(true);
+                  try {
+                    const res = await api<{ ok: boolean; total: number }>("/modules/accounts/simucoins/scan", auth, {
+                      method: "POST",
+                    });
+                    addToast({
+                      tone: "good",
+                      title: "SimuCoins Scan Complete",
+                      message: `Scanned ${res.total} accounts.`,
+                    });
+                    const data = await api<{ simucoins: SimucoinRow[] }>("/modules/accounts/simucoins", auth);
+                    setSimuRows(data.simucoins);
+                  } catch (err) {
+                    addToast({
+                      tone: "bad",
+                      title: "SimuCoins Scan Failed",
+                      message: (err as Error).message,
+                    });
+                  } finally {
+                    setScanningSimu(false);
+                  }
+                }}
+              >
+                {scanningSimu ? "Scanning Store..." : "Scan SimuCoins"}
+              </Button>
+            )}
+          </div>
+
+          <div className="tile-grid" style={{ marginTop: 0, marginBottom: "var(--space-4)" }}>
+            <Card ariaLabel="Total SimuCoins" title="Total SimuCoins">
+              <span style={{ fontSize: "var(--font-size-xl)", fontWeight: "var(--font-weight-bold)" }}>
+                {fmt(simuRows.reduce((acc, r) => acc + (r.store_balance || 0), 0))} SC
+              </span>
+            </Card>
+            <Card ariaLabel="Accounts with SimuCoins" title="Accounts with SimuCoins">
+              <span style={{ fontSize: "var(--font-size-xl)", fontWeight: "var(--font-weight-bold)" }}>
+                {simuRows.filter((r) => (r.store_balance || 0) > 0).length} / {simuRows.length}
+              </span>
+            </Card>
+          </div>
+
+          <Table
+            columns={simuColumns}
+            rows={filteredSimu}
+            rowKey={(r) => r.account_name}
+            ariaLabel="SimuCoin store balances"
+            loading={loadingSimu}
+            emptyState="No SimuCoin data found. Click 'Scan SimuCoins' to check balances."
+          />
+          <p className="muted" style={{ marginTop: "var(--space-2)", textAlign: "right" }}>
+            {filteredSimu.length} {filteredSimu.length === 1 ? "account" : "accounts"}
           </p>
         </>
       ) : (

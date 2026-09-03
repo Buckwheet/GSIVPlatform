@@ -91,6 +91,12 @@ export class EntryYaml {
     return rows;
   }
 
+  /** List all account keys defined in entry.yaml. */
+  listAccountNames(): string[] {
+    const doc = readDoc(this.path);
+    return Object.keys(doc.accounts ?? {}).map(accountKey);
+  }
+
   /** Backup the current file (`.bak.<ts>`) then write new content. */
   write(content: string): void {
     const backup = `${this.path}.bak.${Date.now()}`;

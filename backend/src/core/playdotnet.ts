@@ -103,4 +103,57 @@ export class Playdotnet {
     }
     throw new Error("play.net all retries hit broken backend");
   }
+
+  /**
+   * Scrape SimuCoin store balance and next reward message from store.play.net.
+   * Review-gated core capability ported from v1.
+   */
+  async scrapeStore(
+    account: string,
+    password: string,
+    gameCode = "GS3",
+  ): Promise<{ balance: number; rewardNext: string | null }> {
+    const jar = new CookieJar();
+    const fetchC = makeFetchCookie(this.fetchFn, jar);
+    const storeUrl = gameCode.startsWith("GS")
+      ? "https://store.play.net/Account/SignIn?returnURL=%2Fstore%2Fpurchase%2Fgs"
+      : "https://store.play.net/Account/SignIn?returnURL=%2Fstore%2Fpurchase%2Fdr";
+
+    const page = await fetchC(storeUrl, { headers: { "User-Agent": UA } });
+    const $p = load(await page.text());
+    const token = $p("[name='__RequestVerificationToken']").attr("value") || "";
+    if (!token) throw new Error("no CSRF token");
+
+    const form = new URLSearchParams();
+    form.set("UserName", account);
+    form.set("Password", password);
+    form.set("__RequestVerificationToken", token);
+
+    const resp = await fetchC(storeUrl, {
+      method: "POST",
+      body: form.toString(),
+      headers: {
+        "User-Agent": UA,
+        "Content-Type": "application/x-www-form-urlencoded",
+        Referer: storeUrl,
+      },
+    });
+
+    const html = await resp.text();
+    const $ = load(html);
+
+    const loginText = $("#login").text().toLowerCase();
+    if (!loginText.includes(account.toLowerCase())) {
+      const titleBar = $(".smu-titlebar").text();
+      if (titleBar.includes("Cancelled")) throw new Error("account_cancelled");
+      if (loginText.includes("sign in")) throw new Error("store_login_failed");
+      throw new Error("store_login_unknown");
+    }
+
+    const rawBal = $(".balance > span").text().trim().replace(/,/g, "");
+    const balance = Number.parseInt(rawBal, 10) || 0;
+    const rewardNext = $(".RewardMessage").text().trim() || null;
+
+    return { balance, rewardNext };
+  }
 }

@@ -77,12 +77,18 @@ class FakePlaydotnet extends Playdotnet {
   constructor(
     private chars: InactiveChar[] = [],
     private error?: Error,
+    public storeBalance: number = 3977,
+    public rewardNext: string | null = "Next in 10d",
   ) {
     super();
   }
   override async listInactiveCharacters(): Promise<InactiveChar[]> {
     if (this.error) throw this.error;
     return this.chars;
+  }
+  override async scrapeStore(): Promise<{ balance: number; rewardNext: string | null }> {
+    if (this.error) throw this.error;
+    return { balance: this.storeBalance, rewardNext: this.rewardNext };
   }
 }
 
@@ -726,6 +732,29 @@ describe("AccountsStore", () => {
       expect(stopCalled).toBe(false);
       expect(fakeInv.deletedCharacters).toEqual([]);
       expect(res.steps.every((s) => s.result.startsWith("dry-run"))).toBe(true);
+    });
+  });
+
+  describe("SimuCoins", () => {
+    it("scanSimucoins scans targeted accounts and saves balances", async () => {
+      const { store } = makeStore();
+      const res = await store.scanSimucoins("BUCKWHEET");
+      expect(res.ok).toBe(true);
+      expect(res.total).toBe(1);
+      expect(res.results).toEqual([
+        {
+          account: "BUCKWHEET",
+          ok: true,
+          balance: 3977,
+          rewardNext: "Next in 10d",
+        },
+      ]);
+
+      const list = store.getSimucoins();
+      const buckwheet = list.find((a) => a.account_name === "BUCKWHEET");
+      expect(buckwheet).toBeDefined();
+      expect(buckwheet?.store_balance).toBe(3977);
+      expect(buckwheet?.store_reward_next).toBe("Next in 10d");
     });
   });
 });
