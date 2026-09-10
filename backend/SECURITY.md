@@ -1,5 +1,13 @@
 # GSIVPlatform — Security Model
 
+> **2026-09-10 security review** — findings from the Cloudflare/deployment review are documented in
+> [`docs/security/2026-09-10-security-review.md`](../docs/security/2026-09-10-security-review.md):
+> 2 critical (live API tokens published in this public repo; Cloudflare `Flexible` SSL with no TLS at
+> the origin), 4 high (origin bypasses Cloudflare; no WAF/rate-limiting/bot protection; no HSTS with a
+> TLS 1.0 floor; `NOPASSWD: ALL` sudo behind admin-scoped file/exec endpoints).
+> **Phase 0 — rotating the published `AUTH_TOKENS` — has NOT been started.** Until it is done, treat
+> every token value that appears anywhere in this repo as compromised.
+
 ## Auth
 - Bearer tokens from `AUTH_TOKENS` env (`name:token[:scope1,scope2]`).
 - Missing scopes => full admin (`*`). This is intentional and documented;
