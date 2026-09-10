@@ -266,6 +266,11 @@ export class StreamProvisioner {
   // Paths the service user *can* write (/etc/caddy/Caddyfile, backend/.env) keep
   // using the plain injected fs layer so their ownership/mode is never changed.
 
+  /** Root-owned location: the systemd unit dir, or the Caddyfile (its dir is root-owned). */
+  private isPrivilegedPath(path: string): boolean {
+    return path.startsWith(this.opts.paths.systemdDir) || path.startsWith(this.opts.paths.caddyfile);
+  }
+
   /** Run a privileged command as root (args array only, never a shell string). */
   private privExec(cmd: string, args: string[]): Promise<ExecResult> {
     return this.exec("sudo", [cmd, ...args], this.timeoutMs);
@@ -306,8 +311,8 @@ export class StreamProvisioner {
     if (!this.exists(path)) return null;
     const raw = this.read(path);
     const bak = `${path}.bak.${Date.now()}`;
-    // Drop-in backups live in a root-owned dir; Caddyfile/.env are service-writable.
-    if (path.startsWith(this.opts.paths.systemdDir)) await this.privWrite(bak, raw);
+    // Drop-ins + Caddyfile backups land in root-owned dirs; .env is service-writable.
+    if (this.isPrivilegedPath(path)) await this.privWrite(bak, raw);
     else this.write(bak, raw);
     return bak;
   }
@@ -380,7 +385,7 @@ export class StreamProvisioner {
       // 2) Caddy: append host matcher + handler block; validate before reload.
       const newCaddy = this.insertCaddy(caddyRaw, char, ports.web);
       const caddyBak = await this.backup(this.opts.paths.caddyfile);
-      this.write(this.opts.paths.caddyfile, newCaddy);
+      await this.privWrite(this.opts.paths.caddyfile, newCaddy);
       record(this.opts.paths.caddyfile, newCaddy, caddyBak);
 
       // 3) .env: extend VELLUM_STREAMS.
@@ -511,10 +516,12 @@ export class StreamProvisioner {
     backups: { path: string; bak: string | null; raw: string }[],
     char: string,
   ): Promise<void> {
-    // Restore Caddyfile + .env to their original content.
+    // Restore Caddyfile + .env to their original content (the Caddyfile needs sudo:
+    // a successful provision leaves it root-owned in a root-owned dir).
     for (const [target, raw] of originals) {
       try {
-        this.write(target, raw);
+        if (this.isPrivilegedPath(target)) await this.privWrite(target, raw);
+        else this.write(target, raw);
       } catch {
         // best-effort
       }

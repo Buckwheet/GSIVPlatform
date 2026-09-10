@@ -240,6 +240,11 @@ describe("StreamProvisioner.provision", () => {
       mem.logs.some((l) => /^sudo install -m 644 .*vellum-fe@Buckwheet\.service\.d\/override\.conf$/.test(l)),
     ).toBe(true);
     expect(mem.logs.some((l) => l.startsWith("write /etc/systemd/system/"))).toBe(false);
+    // /etc/caddy is root-owned as well: the Caddyfile content and its .bak sibling
+    // are installed as root (a plain write of the sibling hit EACCES in production).
+    expect(mem.logs.some((l) => /^sudo install -m 644 .*\/Caddyfile$/.test(l))).toBe(true);
+    expect(mem.logs.some((l) => /^sudo install -m 644 .*\/Caddyfile\.bak\./.test(l))).toBe(true);
+    expect(mem.logs.some((l) => l.startsWith("write /etc/caddy/"))).toBe(false);
   });
 
   it("provisioning a char that is not running does NOT restart its Lich unit", async () => {
