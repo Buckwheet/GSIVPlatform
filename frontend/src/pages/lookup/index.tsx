@@ -347,7 +347,13 @@ export default function Lookup({ auth }: { auth: AuthState }) {
       addToast({
         tone: "good",
         title: `${character} launched`,
-        message: `${res.started ? "Lich session started" : "Lich session already active"} — ${streamUp ? "stream opened." : "stream web UI is currently offline."}`,
+        message: `${res.started ? "Lich session started" : "Lich session already active"} — ${
+          streamUp
+            ? "stream opened."
+            : url
+              ? "stream web UI is currently offline."
+              : "stream created; give it a few seconds to come up."
+        }`,
       });
     } catch (err) {
       if (win) win.close();
@@ -361,10 +367,26 @@ export default function Lookup({ auth }: { auth: AuthState }) {
     const s = streams[character];
     const canWrite = can(auth, ["lich.write"]) || can(auth, ["characters.write"]);
     if (!s) {
+      // No stream yet: launching is what CREATES one (the backend provisions the
+      // VellumFE stream + Caddy host on POST /launch/:char). Disabling the button
+      // here made auto-provisioning unreachable for exactly the chars that need
+      // it, so it stays enabled for writers and disabled only for read-only users.
+      if (canWrite) {
+        return (
+          <Button
+            loading={launching === character}
+            onClick={() => void launchChar(character, "", false)}
+            title={`Bring ${character} online — no stream yet, launching creates one`}
+            ariaLabel={`Bring ${character} online and create its stream`}
+          >
+            launch ▸
+          </Button>
+        );
+      }
       return (
         <Button
           disabled
-          title={`No stream for ${character} — add one per deploy/V2-DEPLOYMENT.md §VellumFE`}
+          title={`No stream for ${character} — creating one needs lich.write/characters.write (deploy/V2-DEPLOYMENT.md §VellumFE)`}
           ariaLabel={`Launch ${character}`}
         >
           launch ▸

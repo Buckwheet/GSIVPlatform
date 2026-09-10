@@ -50,6 +50,27 @@ function makeProvisioner(
 
   const exec = async (cmd: string, args: string[], _t: number) => {
     mem.logs.push([cmd, ...args].join(" "));
+    // Privileged calls arrive as `sudo <cmd> <args…>`: emulate the file effects of
+    // `install` / `rm`, then fall through to the command handling below so caddy /
+    // systemctl behaviour stays shared with the unprivileged read paths.
+    if (cmd === "sudo") {
+      const real = args[0];
+      const rest = args.slice(1);
+      if (real === "install" && rest[0] === "-m") {
+        const src = rest[2];
+        const dest = rest[3];
+        const content = mem.files[src];
+        if (content === undefined) return { stdout: "", stderr: `no such file ${src}`, code: 1 };
+        mem.files[dest] = content;
+        return { stdout: "", stderr: "", code: 0 };
+      }
+      if (real === "rm") {
+        for (const p of rest.slice(1)) delete mem.files[p];
+        return { stdout: "", stderr: "", code: 0 };
+      }
+      cmd = real;
+      args = rest;
+    }
     // Resolve template units to argv for any char.
     if (cmd === "systemctl" && args[0] === "show" && args[1]?.startsWith("gs4sd-lich@")) {
       const char = args[1].slice("gs4sd-lich@".length, -".service".length);
@@ -203,12 +224,22 @@ describe("StreamProvisioner.provision", () => {
     expect(env).toContain("VELLUM_STREAMS=Fisternar:9101:9201,Neleourg:9102:9202,Buckwheet:9103:9203");
     expect(env).toContain("AUTH_TOKENS=x");
 
-    // systemd flow executed
-    expect(mem.logs).toContain("systemctl daemon-reload");
-    expect(mem.logs).toContain("systemctl enable --now vellum-fe@Buckwheet.service");
-    expect(mem.logs).toContain("systemctl restart gs4sd-lich@Buckwheet.service");
-    expect(mem.logs).toContain("caddy validate --config /etc/caddy/Caddyfile");
-    expect(mem.logs).toContain("caddy reload --config /etc/caddy/Caddyfile");
+    // Host mutations run privileged (the unprivileged service user cannot touch
+    // /etc/systemd/system, the systemd bus or Caddy's admin socket).
+    expect(mem.logs).toContain("sudo systemctl daemon-reload");
+    expect(mem.logs).toContain("sudo systemctl enable --now vellum-fe@Buckwheet.service");
+    expect(mem.logs).toContain("sudo systemctl restart gs4sd-lich@Buckwheet.service");
+    expect(mem.logs).toContain("sudo caddy validate --config /etc/caddy/Caddyfile");
+    expect(mem.logs).toContain("sudo caddy reload --config /etc/caddy/Caddyfile");
+    // Drop-ins are staged in a temp file and installed as root — never a plain
+    // unprivileged write (that was the production EACCES bug).
+    expect(
+      mem.logs.some((l) => /^sudo install -m 644 .*gs4sd-lich@Buckwheet\.service\.d\/override\.conf$/.test(l)),
+    ).toBe(true);
+    expect(
+      mem.logs.some((l) => /^sudo install -m 644 .*vellum-fe@Buckwheet\.service\.d\/override\.conf$/.test(l)),
+    ).toBe(true);
+    expect(mem.logs.some((l) => l.startsWith("write /etc/systemd/system/"))).toBe(false);
   });
 
   it("provisioning a char that is not running does NOT restart its Lich unit", async () => {
@@ -216,7 +247,7 @@ describe("StreamProvisioner.provision", () => {
     const p = makeProvisioner(mem);
     const res = await p.provision("Buckwheet");
     expect(res.provisioned).toBe(true);
-    expect(mem.logs.some((l) => l.startsWith("systemctl restart gs4sd-lich@Buckwheet"))).toBe(false);
+    expect(mem.logs.some((l) => l.startsWith("sudo systemctl restart gs4sd-lich@Buckwheet"))).toBe(false);
   });
 
   it("is a no-op for an already-provisioned char (returns existing, no writes)", async () => {
@@ -242,9 +273,11 @@ describe("StreamProvisioner.provision", () => {
     // Drop-ins removed + unit stopped/disabled
     expect(mem.files["/etc/systemd/system/gs4sd-lich@Buckwheet.service.d/override.conf"]).toBeUndefined();
     expect(mem.files["/etc/systemd/system/vellum-fe@Buckwheet.service.d/override.conf"]).toBeUndefined();
-    expect(mem.logs).toContain("systemctl daemon-reload");
-    expect(mem.logs).toContain("systemctl stop vellum-fe@Buckwheet.service");
-    expect(mem.logs).toContain("systemctl disable vellum-fe@Buckwheet.service");
+    expect(mem.logs).toContain("sudo systemctl daemon-reload");
+    expect(mem.logs).toContain("sudo systemctl stop vellum-fe@Buckwheet.service");
+    expect(mem.logs).toContain("sudo systemctl disable vellum-fe@Buckwheet.service");
+    // Drop-ins are removed through the privileged path, not a plain fs delete.
+    expect(mem.logs.some((l) => /^sudo rm -f -- .*override\.conf/.test(l))).toBe(true);
   });
 
   it("validates the character name and rejects bad names", async () => {

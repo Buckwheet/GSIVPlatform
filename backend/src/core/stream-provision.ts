@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, posix } from "node:path";
 import { validateCharName } from "./systemd.js";
 
@@ -242,6 +243,7 @@ export class StreamProvisioner {
   private remove: (paths: string[]) => void;
   private allocator: Allocator;
   private timeoutMs: number;
+  private seq = 0;
 
   constructor(private opts: StreamProvisionOpts) {
     this.exec = opts.exec ?? defaultExec;
@@ -253,13 +255,60 @@ export class StreamProvisioner {
     this.timeoutMs = opts.timeoutMs ?? 15_000;
   }
 
+  // --- privileged host access ------------------------------------------------
+  // gsiv-platform.service runs as an unprivileged user (ubuntu on the box), but
+  // every host mutation below targets root-owned state:
+  //   /etc/systemd/system/*.service.d/ (drop-in dirs) and systemctl/caddy actions
+  //   (daemon-reload / enable / restart / stop / disable, caddy validate+reload).
+  // So all of it goes through `sudo` (NOPASSWD for the service user) and file
+  // content is staged in a temp file that `install` copies into place. Still no
+  // shell strings: every exec is execFile with an args array (SECURITY.md).
+  // Paths the service user *can* write (/etc/caddy/Caddyfile, backend/.env) keep
+  // using the plain injected fs layer so their ownership/mode is never changed.
+
+  /** Run a privileged command as root (args array only, never a shell string). */
+  private privExec(cmd: string, args: string[]): Promise<ExecResult> {
+    return this.exec("sudo", [cmd, ...args], this.timeoutMs);
+  }
+
+  /** Write a root-owned file: stage in tmpdir, then `sudo install` it into place. */
+  private async privWrite(target: string, content: string): Promise<void> {
+    this.seq += 1;
+    const tmp = posix.join(tmpdir(), `gsiv-provision-${process.pid}-${Date.now()}-${this.seq}`);
+    this.write(tmp, content);
+    try {
+      await this.ok(
+        this.privExec("install", ["-d", "-m", "755", posix.dirname(target)]),
+        `create ${posix.dirname(target)}`,
+      );
+      await this.ok(this.privExec("install", ["-m", "644", tmp, target]), `write ${target}`);
+    } finally {
+      try {
+        this.remove([tmp]);
+      } catch {
+        // best effort
+      }
+    }
+  }
+
+  /** Remove root-owned files (best effort — rollback path). */
+  private async privRemove(paths: string[]): Promise<void> {
+    try {
+      await this.privExec("rm", ["-f", "--", ...paths]);
+    } catch {
+      // best effort
+    }
+  }
+
   /** Backup `path` by copying its current content to `path.bak.<ts>` (all via the
    *  injected fs layer). No-op+null when the file doesn't exist. */
-  private backup(path: string): string | null {
+  private async backup(path: string): Promise<string | null> {
     if (!this.exists(path)) return null;
     const raw = this.read(path);
     const bak = `${path}.bak.${Date.now()}`;
-    this.write(bak, raw);
+    // Drop-in backups live in a root-owned dir; Caddyfile/.env are service-writable.
+    if (path.startsWith(this.opts.paths.systemdDir)) await this.privWrite(bak, raw);
+    else this.write(bak, raw);
     return bak;
   }
 
@@ -320,56 +369,50 @@ export class StreamProvisioner {
       const vellDropin = `[Service]\nExecStart=\nExecStart=${serviceExecStart(
         withPorts(vellArgv, ports.detach, ports.web),
       )}\n`;
-      const lichBak = this.backup(lichDropinPath);
-      this.write(lichDropinPath, lichDropin);
+      const lichBak = await this.backup(lichDropinPath);
+      await this.privWrite(lichDropinPath, lichDropin);
       record(lichDropinPath, lichDropin, lichBak);
 
-      const vellBak = this.backup(vellDropinPath);
-      this.write(vellDropinPath, vellDropin);
+      const vellBak = await this.backup(vellDropinPath);
+      await this.privWrite(vellDropinPath, vellDropin);
       record(vellDropinPath, vellDropin, vellBak);
 
       // 2) Caddy: append host matcher + handler block; validate before reload.
       const newCaddy = this.insertCaddy(caddyRaw, char, ports.web);
-      const caddyBak = this.backup(this.opts.paths.caddyfile);
+      const caddyBak = await this.backup(this.opts.paths.caddyfile);
       this.write(this.opts.paths.caddyfile, newCaddy);
       record(this.opts.paths.caddyfile, newCaddy, caddyBak);
 
       // 3) .env: extend VELLUM_STREAMS.
       const newEnv = this.extendEnv(envRaw, char, ports);
-      const envBak = this.backup(this.opts.paths.envPath);
+      const envBak = await this.backup(this.opts.paths.envPath);
       this.write(this.opts.paths.envPath, newEnv);
       record(this.opts.paths.envPath, newEnv, envBak);
 
       // 4) systemd: daemon-reload, enable+start vellum-fe.
-      await this.ok(this.exec("systemctl", ["daemon-reload"], this.timeoutMs), "daemon-reload");
-      await this.ok(
-        this.exec("systemctl", ["enable", "--now", vellumUnit], this.timeoutMs),
-        `enable+start ${vellumUnit}`,
-      );
+      await this.ok(this.privExec("systemctl", ["daemon-reload"]), "daemon-reload");
+      await this.ok(this.privExec("systemctl", ["enable", "--now", vellumUnit]), `enable+start ${vellumUnit}`);
 
       // 5) Restart the Lich unit IF it is currently active so the fresh
       //    --detachable-client applies. If the char isn't running yet, the
       //    launch handler starts it after provisioning completes (no restart here).
       if (await this.isActive(lichUnit)) {
-        await this.ok(this.exec("systemctl", ["restart", lichUnit], this.timeoutMs), `restart ${lichUnit}`);
+        await this.ok(this.privExec("systemctl", ["restart", lichUnit]), `restart ${lichUnit}`);
       }
 
       // 6) Validate the Caddy config and only then reload; a bad config is
       //    restored + rolled back (never left live).
-      const caddyValidate = await this.exec("caddy", ["validate", "--config", this.opts.paths.caddyfile], 30_000);
+      const caddyValidate = await this.privExec("caddy", ["validate", "--config", this.opts.paths.caddyfile]);
       if (caddyValidate.code !== 0) {
         throw new StreamProvisionError(`invalid new Caddy config: ${caddyValidate.stderr.trim()}`);
       }
-      await this.ok(
-        this.exec("caddy", ["reload", "--config", this.opts.paths.caddyfile], this.timeoutMs),
-        "caddy reload",
-      );
+      await this.ok(this.privExec("caddy", ["reload", "--config", this.opts.paths.caddyfile]), "caddy reload");
       // NOTE: no synchronous backend restart (it would kill this in-flight
       // response). The module updates its in-memory streams map right after a
       // successful provision; the .env edit above persists for the next boot.
     } catch (err) {
       // Roll back every mutation we made before rethrowing.
-      this.rollback(originals, backups, char);
+      await this.rollback(originals, backups, char);
       if (err instanceof StreamProvisionError) throw err;
       throw new StreamProvisionError(
         `provisioning failed and was rolled back: ${String((err as Error)?.message ?? err)}`,
@@ -434,14 +477,14 @@ export class StreamProvisioner {
       if (at === -1) {
         out = `${out.trimEnd()}\n${matcher}\n`;
       } else {
-        out = out.slice(0, at) + `\n${matcher}` + out.slice(at);
+        out = `${out.slice(0, at)}\n${matcher}${out.slice(at)}`;
       }
     }
     if (!raw.includes(`reverse_proxy 127.0.0.1:${web}`)) {
       // Insert before the final standalone closing brace at column 0 that ends the site.
       const lastBrace = out.lastIndexOf("\n}");
       if (lastBrace !== -1) {
-        out = out.slice(0, lastBrace) + block + "\n" + out.slice(lastBrace + 1);
+        out = `${out.slice(0, lastBrace)}${block}\n${out.slice(lastBrace + 1)}`;
       } else {
         out = `${out.trimEnd()}\n${block}\n`;
       }
@@ -460,14 +503,14 @@ export class StreamProvisioner {
       return raw.replace(/(^VELLUM_STREAMS=.*$)/m, updated);
     }
     // No existing key: append.
-    return raw.trimEnd() + `\nVELLUM_STREAMS=${newEntry}\n`;
+    return `${raw.trimEnd()}\nVELLUM_STREAMS=${newEntry}\n`;
   }
 
-  private rollback(
+  private async rollback(
     originals: Map<string, string>,
     backups: { path: string; bak: string | null; raw: string }[],
     char: string,
-  ): void {
+  ): Promise<void> {
     // Restore Caddyfile + .env to their original content.
     for (const [target, raw] of originals) {
       try {
@@ -476,15 +519,15 @@ export class StreamProvisioner {
         // best-effort
       }
     }
-    // Remove the drop-ins we created (and their backups) for this char.
-    this.remove([
+    // Remove the drop-ins we created for this char (root-owned: sudo rm).
+    await this.privRemove([
       posix.join(this.opts.paths.systemdDir, `gs4sd-lich@${char}.service.d`, "override.conf"),
       posix.join(this.opts.paths.systemdDir, `vellum-fe@${char}.service.d`, "override.conf"),
     ]);
     try {
-      void this.exec("systemctl", ["daemon-reload"], this.timeoutMs);
-      void this.exec("systemctl", ["stop", `vellum-fe@${char}.service`], this.timeoutMs);
-      void this.exec("systemctl", ["disable", `vellum-fe@${char}.service`], this.timeoutMs);
+      await this.privExec("systemctl", ["daemon-reload"]);
+      await this.privExec("systemctl", ["stop", `vellum-fe@${char}.service`]);
+      await this.privExec("systemctl", ["disable", `vellum-fe@${char}.service`]);
     } catch {
       // best-effort
     }
