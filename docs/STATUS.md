@@ -212,26 +212,15 @@ Apious, Pace, Rhezikk, Tahreal, Thadior...). Stale incl. **Scorpa (LWELLS5500)**
 
 **Restart prompt (copy-paste into a new session when resuming):**
 
-> Continue GSIVPlatform work in `D:Code ProjectsGSIVPlatform` (repo outside the C: workspace — all edits
-> through bash; file tools refuse D:). Read docs/STATUS.md §7 first for the full session log.
-> **DO THIS FIRST — VellumFE upgrade track, phase 2** (phase 1 shipped 2026-09-11; read `deploy/VELLUMFE-UPGRADE.md` §1 + the 2026-09-11 session log above).
-> Phase 1 artifacts are in place: `deploy/vellumfe/gsiv-webui.patch` (our 2 web-UI patches, byte-verified against the live binary), `deploy/vellumfe/build-vellumfe.sh`, `deploy/VELLUMFE-UPGRADE.md`.
-> Phase 2: (1) commit the patches to fork branch `gsiv` in `D:\GSIV Development\VellumFE` (Buckwheet/VellumFE is PRIVATE; Nisugi is the `upstream` remote) + push; (2) backend `updates` module — poll upstream GitHub **releases** (all Pre-release, so `/releases/latest` never matches: list + sort `vX.Y.Z-beta.N`), compare against `VELLUM_VERSION`, file a 🔔 bell notification that stays unread until acked (`frontend/src/shell/Bell.tsx` merges only your-shops today — add the second source); (3) set `VELLUM_VERSION=0.3.0-beta.37` in the server `.env` (absent today), restart `gsiv-platform`, confirm the bell reports `v0.3.0-beta.50` available, then ack. TDD; gate = backend `npm test && npm run typecheck && npm run lint` + frontend build; PR flow. Optional follow-on: run the playbook for `v0.3.0-beta.50` — verified 2026-09-11 that the patch still applies unchanged (+64 offsets, no porting); unit restarts need the user's approval.
-> **Recently shipped (through PR #63, main @ 1beeb9e) — scan orchestrator:** new /scans page +
-> TypeScript `core/scan-runner.ts` + `modules/scans` replaced the bash scheduler (5 concurrent accounts,
-> full re-scan, manual retry, `scan_alert` toast + EventLog; PR #48) — plus lookup steps 1–6 (Bank/Resources/
-> Tickets/Items/launch/Overview on /lookup), weekly roster-sync (SGE poll + stale flagging), char-failure
-> disambiguation (PR #49: auth vs disabled vs transient via fresh SGE re-check), no-active-characters alert
-> (PR #50), play.net inactive-char scrape (PR #51: `deleted=1` + level/race/profession/last_login on
-> account_characters, surfaced on /accounts). 359 backend tests.
-> **Still parked:** (1) **stale-char cleanup — USER ACTION:** "Clean up stale" on /accounts is built + deployed
-> (PR #47, TOTP-gated, `dry_run` preview) but still unclicked: 17 dead accts + 30 stale chars pending; click it
-> with a fresh authenticator code, then verify /accounts, /lookup Overview, /characters no longer list them;
-> (2) optional ebounty_tracker port. **(3) STREAM PROVISIONING IS NOW AUTOMATIC (PR #56):** launching a
-> character not yet in VELLUM_STREAMS auto-provisions its VellumFE stream — no manual §VellumFE recipe needed.
-> **Testing rule:** Fisternar/Neleourg only, Amn off-limits.
-> **Server:** `ssh -i ~/.ssh/id_ed25519 ubuntu@51.68.235.144` (origin IP; DNS name is Cloudflare-fronted) —
-> runbook at top of server .env; frontend deploys MUST copy contents into /opt/gsiv-platform/frontend
-> (Caddy root), verify public bundle is text/javascript. Workflow: branch → `gh pr merge`. Recall memories:
-> gsivplatform-weekly-roster-sync-... , next-feature-interactive-... , gsiv-server-ssh-origin-ip-... ,
-> invdb-lic-patches-... .
+> Continue GSIVPlatform work in `D:\Code Projects\GSIVPlatform` (repo outside the C: workspace). Read docs/STATUS.md §7 first, then `deploy/VELLUMFE-UPGRADE.md` §1.
+> **Where things stand (2026-09-11):** main @ `c201343`; PRs #64 (VellumFE playbook + patch artifact), #65 (swap-recipe fix), #67 (run record).
+> **`vellum-fe 0.3.0-beta.50` is LIVE** on all five stream units (Aeton, Diynasta, Fisternar, Neleourg, Vaikar): built on the box from `deploy/vellumfe/gsiv-webui.patch` (BUILD-OK, 21m32s, zero downtime), swapped 2026-09-11, replacing `0.3.0-beta.37` (13 releases behind). Rollback: `/opt/vellumfe/vellum-fe.bak-0.3.0-beta.37`. Verified: live sha256 `61c07077…`, 5× active, ports 9201–9205, patch markers (`zeroClickConnecting` ×5, `Connecting to the game` ×3) in the shipped bytes, HTTP 200 on every `<char>.phylactery.ovh/play`, served `/app.js` 319,796 B identical plain and cache-busted.
+> **NEXT — Phase 2, the dashboard alert (nothing alerts you yet):**
+> (1) Backend `updates` module (API-only; scopes `updates.read`/`updates.write`; CoreDb-backed): poll upstream GitHub **releases** on a timer — every Nisugi/VellumFE release is marked Pre-release so `/releases/latest` never matches: list releases, pick the max with a beta-aware semver compare (`0.3.0-beta.44 < 0.3.0-beta.50`), compare against `VELLUM_VERSION` from the server `.env`, keep a notification unread until acked, expose `GET /notifications` + `POST /notifications/ack`. TDD; inject `fetch` and the clock.
+> (2) Frontend `frontend/src/shell/Bell.tsx` merges only the your-shops feed today — add the `updates` source (source label, per-item unread, ack routed per source).
+> (3) Server: add `VELLUM_VERSION=0.3.0-beta.50` to `/opt/gsiv-platform/backend/.env` (backup first; mode 600) + `sudo systemctl restart gsiv-platform`; then confirm the API/bell reports NO update available (we are current), and that a faked older version reports `v0.3.0-beta.50` available.
+> (4) Gate: `cd backend && npm test && npm run typecheck && npm run lint` + `cd frontend && npm run build`; ship branch → `gh pr create` → `gh pr merge --merge` (main is protected; never push to main).
+> **Also parked:** commit the two web-UI patches to fork branch `gsiv` in `D:\GSIV Development\VellumFE` (Buckwheet/VellumFE is PRIVATE; Nisugi’s repo is `upstream`); stale-char cleanup (your TOTP click — 17 dead accts + 30 stale chars still pending); optional ebounty_tracker port. The playbook §8 “ack the bell” step becomes real only once Phase 2 lands.
+> **Testing rule:** Fisternar/Neleourg only, **Amn off-limits**. Any change that restarts a stream unit needs user approval (drops that char’s stream for seconds). After any frontend or VellumFE rebuild, hard-refresh — `/app.js` is served with `max-age=14400`, so a stale tab looks like a failed change for up to 4h.
+> **Server:** `ssh -i ~/.ssh/id_ed25519 ubuntu@51.68.235.144` (origin IP; DNS is Cloudflare-fronted). Frontend deploys MUST copy contents into `/opt/gsiv-platform/frontend` (Caddy root) and the live bundle must come back `text/javascript`. The VellumFE build tree `/opt/vellumfe-build/v0.3.0-beta.50` (1.9 GB) can be pruned; `/opt/vellumfe-src` is historical.
+> **Memories:** `gsivplatform-vellumfe-upgrade-playbook-pr64-beta50-staged` (its text still says “staged” — beta.50 is deployed; correct it), `vellumfe-app-js-patches-4h-cache-gotcha-on-stream-watch-flow`, `gsivplatform-test-only-fisternar-neleourg`, `gsiv-server-ssh-origin-ip-id-ed25519-deploy-runbook-server-env-file`, `next-feature-interactive-invdb-item-search-…`, `write-progress-restart-prompt-at-wrap-up-embed-in-status-md-section-7`.
