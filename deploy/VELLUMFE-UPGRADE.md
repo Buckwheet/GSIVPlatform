@@ -57,15 +57,31 @@ A VellumFE release ships Linux/macOS/Windows/Android/iOS binaries. We take
 |---|---|
 | Binary | `/opt/vellumfe/vellum-fe` (currently `vellum-fe 0.3.0-beta.37`) |
 | Build source (historical) | `/opt/vellumfe-src` — shallow upstream clone @ `526b263`, hand-patched `app.js` |
-| Stream unit | `/etc/systemd/system/vellum-fe@.service` (template) + per-char drop-ins `vellum-fe@<Char>.service.d/` |
-| Streamed chars | **discover, don't assume:** `ssh ubuntu@51.68.235.144 "ls -d /etc/systemd/system/vellum-fe@*.service.d"` (4 as of 2026-08-11: Aeton, Diynasta, Neleourg, Vaikar) |
+| Stream unit | `/etc/systemd/system/vellum-fe@.service` (template) + per-char drop-ins `vellum-fe@<Char>.service.d/` — **a char can have a unit with no drop-in dir (Fisternar does)** |
+| Streamed chars | **discover from the UNITS, not the drop-in dirs:** `ssh ubuntu@51.68.235.144 "systemctl list-units 'vellum-fe@*' --plain --no-legend"` — **5 as of 2026-09-11:** Aeton, Diynasta, Fisternar, Neleourg, Vaikar (all `active running`) |
 | Ports | detach `910X`, web `920X`, per char (`VELLUM_STREAMS` in the server `.env`) |
 | Public URL | `https://<char>.phylactery.ovh/play#token=…&lich=127.0.0.1:<detach>&name=<Char>` via Caddy (`vellum.phylactery.ovh` carries basic_auth) |
 | Platform seam | backend module `gameview` (`VELLUM_BASE_URL`, `VELLUM_STREAM_DOMAIN`, `VELLUM_STREAMS`, `VELLUM_TOKEN`, scope `gameview.read`) |
 
-**Versions as of 2026-09-11:** box `0.3.0-beta.37` · upstream latest
+**Versions as of 2026-09-11:** deployed `0.3.0-beta.37` · upstream latest
 `v0.3.0-beta.50` (pre-release, published 2026-09-09) · local fork `0.3.0-beta.44`
-→ the box is **13 releases behind**, so the 🔔 alert should already be showing it.
+→ the deployed box is **13 releases behind**, so the 🔔 alert should already be
+showing it.
+
+**`v0.3.0-beta.50` is ALREADY BUILT AND STAGED on the box** (build-only run of §5
+on 2026-09-11, zero downtime — all 5 units stayed `active`):
+
+```
+BUILD-OK tag=v0.3.0-beta.50 version=vellum-fe 0.3.0-beta.50
+  sha256=61c0707734aa42b1e45857d4353fc3845ee2ff1d29ff7af6b20ac5c4d8851444
+  pristine_appjs=52892d9e… (matches the §2.3 row)  patched_appjs=402abcac…
+  binary=/opt/vellumfe-build/v0.3.0-beta.50/target/release/vellum-fe   (71,863,800 B)
+```
+
+21m32s wall clock, build tree 1.9 GB. The patch applied with **no porting**, and
+the shipped bytes carry our markers (`zeroClickConnecting` ×5,
+`Connecting to the game` ×3, `GSIVPlatform` ×6). So the next step for this
+release is §6 (swap) — nothing to port, nothing to rebuild.
 
 ### 2.2 Our carried delta — `gsiv-webui.patch` (5 hunks, ~40 lines)
 
@@ -187,8 +203,11 @@ and **Amn is off-limits** for any testing.
 
 ```bash
 ssh ubuntu@51.68.235.144
-CHARS="$(ls -d /etc/systemd/system/vellum-fe@*.service.d | sed 's#.*vellum-fe@##;s#\.service\.d##')"
-UNITS="$(for c in $CHARS; do echo vellum-fe@$c; done)"
+# Derive the list from the UNITS, never from the drop-in dirs: a char can have a
+# unit without a .service.d (Fisternar does), and a swap that misses one unit
+# leaves its process holding the binary -> `cp` fails with "text file busy".
+UNITS="$(systemctl list-units 'vellum-fe@*' --plain --no-legend | awk '{print $1}')"
+echo "$UNITS"                                                       # expect ALL of them
 OLD="$(/opt/vellumfe/vellum-fe --version | awk '{print $2}')"       # e.g. 0.3.0-beta.37
 
 sudo systemctl stop $UNITS                                          # binary is busy while running
@@ -205,7 +224,7 @@ sudo systemctl start $UNITS
 # a) public page still serves the full app shell (not a 0-byte body)
 curl -s -o /dev/null -w '%{size_download}\n' https://<char>.phylactery.ovh/play    # ≈19471
 # b) every unit active, every web port listening
-systemctl is-active $(for c in $CHARS; do echo vellum-fe@$c; done); ss -ltn | grep 920
+systemctl is-active $UNITS; ss -ltn | grep 920
 # c) OUR patches are in the shipped bytes
 strings /opt/vellumfe/vellum-fe | grep -c 'Connecting to the game…'   # >0
 strings /opt/vellumfe/vellum-fe | grep -c 'zeroClickConnecting'       # >0
