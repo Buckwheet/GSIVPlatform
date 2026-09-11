@@ -5,10 +5,13 @@
 > carry), `deploy/vellumfe/build-vellumfe.sh` (box-side build).
 > Runtime/deploy context: `deploy/V2-DEPLOYMENT.md` §VellumFE.
 
-**Last run:** 2026-08-11 (hand-built, undocumented) — the box runs a
-**`0.3.0-beta.37`** binary built by hand from source with two hand-edited
-web-UI patches. Those patches are now captured as the patch artifact above
-(verified byte-identical, sha256 `6f2a408f…`).
+**Last run:** 2026-09-11 — first real run of this playbook. `v0.3.0-beta.50` was
+built from `deploy/vellumfe/gsiv-webui.patch` (§5, `BUILD-OK`, 21m32s, zero
+downtime) and swapped into all five stream units (§6). Deployed binary =
+`vellum-fe 0.3.0-beta.50`, sha256 `61c0707734aa…60`; the previous
+`0.3.0-beta.37` (hand-built 2026-08-11 with the same two web-UI patches, now
+captured as the patch artifact above, sha256 `6f2a408f…`) is kept at
+`/opt/vellumfe/vellum-fe.bak-0.3.0-beta.37` for rollback.
 
 ---
 
@@ -68,8 +71,8 @@ A VellumFE release ships Linux/macOS/Windows/Android/iOS binaries. We take
 → the deployed box is **13 releases behind**, so the 🔔 alert should already be
 showing it.
 
-**`v0.3.0-beta.50` is ALREADY BUILT AND STAGED on the box** (build-only run of §5
-on 2026-09-11, zero downtime — all 5 units stayed `active`):
+**`v0.3.0-beta.50` is DEPLOYED on the box** (built 2026-09-11 via §5, then
+swapped in via §6 on 2026-09-11 — no porting was needed):
 
 ```
 BUILD-OK tag=v0.3.0-beta.50 version=vellum-fe 0.3.0-beta.50
@@ -80,8 +83,13 @@ BUILD-OK tag=v0.3.0-beta.50 version=vellum-fe 0.3.0-beta.50
 
 21m32s wall clock, build tree 1.9 GB. The patch applied with **no porting**, and
 the shipped bytes carry our markers (`zeroClickConnecting` ×5,
-`Connecting to the game` ×3, `GSIVPlatform` ×6). So the next step for this
-release is §6 (swap) — nothing to port, nothing to rebuild.
+`Connecting to the game` ×3, `GSIVPlatform` ×6). Post-swap verification: `vellum-fe 0.3.0-beta.50`; live binary sha256
+61c0707734aa… matches the built artifact; all 5 units `active`; web ports
+9201-9205 listening; `strings` on the live binary shows `zeroClickConnecting`
+×5 and `Connecting to the game` ×3; every `<char>.phylactery.ovh/play` returns
+HTTP 200; the served `/app.js` is 319,796 bytes on all five hosts, identical
+plain and cache-busted (so Cloudflare was not serving the 4h-cached pre-swap
+copy). Rollback point: `/opt/vellumfe/vellum-fe.bak-0.3.0-beta.37`.
 
 ### 2.2 Our carried delta — `gsiv-webui.patch` (5 hunks, ~40 lines)
 
