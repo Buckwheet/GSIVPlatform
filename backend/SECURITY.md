@@ -140,6 +140,33 @@ premium info (`lich:premium:<char>`), plus the watchdog endpoint.
 - **Events:** publish/commands/premium emit `lich_state` / `lich_command` / `lich_premium` on the event bus
   (no new WS topics wired yet — API-only module).
 
+## Module: updates (upstream release watch)
+
+Read-only outbound check that upstream VellumFE has not moved on without us
+(2026-09-11). CoreDb-backed: `updates_state` (last check + newest tag seen) and
+`updates_notifications` (one row per tag, unread until acked).
+
+- **Auth + scopes:** `updates.read` on `GET /notifications`, `updates.write` on
+  `POST /notifications/ack`. API-only: no page, no nav item — the shell's 🔔 bell
+  is the only consumer.
+- **Outbound only, fixed destination:** the check fetches
+  `https://api.github.com/repos/Nisugi/VellumFE/releases` (repo from `UPDATES_REPO`,
+  never from a request) — there is no caller-supplied URL, so no SSRF surface. The
+  optional `UPDATES_GITHUB_TOKEN` is sent as a bearer header to that host only.
+- **No host mutation:** nothing here touches systemd, files, Caddy, or the game
+  streams; it only records state and files a notification. Taking an upgrade stays a
+  manual, user-approved playbook run (`deploy/VELLUMFE-UPGRADE.md`).
+- **Failure contained:** `poll()` never throws — a failed check is stored as
+  `lastError` and logged, so a GitHub outage can't crash or wedge the service. The
+  poll timer is `unref()`d and its interval is validated (`UPDATES_POLL_MS`, default
+  6h), so a malformed value cannot produce a hot loop.
+- **Untrusted input:** the GitHub payload is validated (non-array throws; drafts and
+  non-semver tags are dropped) and version comparison accepts only `[0-9A-Za-z-]`
+  identifiers — an unparseable stored/env version disables the comparison rather than
+  throwing. Comparison is beta-aware because every upstream release is a Pre-release
+  (`/releases/latest` never matches; string order ranks `beta.44` above `beta.50`).
+- **State:** no secrets — a tag, its release URL, and timestamps.
+
 ## Full-platform audit (2026-08-11)
 
 Whole-tree review (manual + subagent) after internet exposure. Findings + disposition:

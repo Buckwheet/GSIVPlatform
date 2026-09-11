@@ -24,6 +24,7 @@ import { createInventoryModule } from "../src/modules/inventory/index.js";
 import { createLogsModule } from "../src/modules/logs/index.js";
 import { createPricingModule } from "../src/modules/pricing/index.js";
 import { createScansModule } from "../src/modules/scans/index.js";
+import { createUpdatesModule } from "../src/modules/updates/index.js";
 import { createYourShopsModule } from "../src/modules/your-shops/index.js";
 
 const registry = new Registry();
@@ -34,6 +35,7 @@ registry.register(createInventoryModule(undefined as never));
 registry.register(createPricingModule(undefined as never, undefined as never));
 registry.register(createScansModule(undefined as never));
 registry.register(createYourShopsModule(undefined as never, undefined as never));
+registry.register(createUpdatesModule(undefined as never));
 registry.register(createGemsModule(undefined as never));
 registry.register(createHealerModule(undefined as never));
 registry.register(createCharactersModule(undefined as never));

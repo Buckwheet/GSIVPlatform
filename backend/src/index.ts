@@ -43,6 +43,9 @@ import { PricingScraper } from "./modules/pricing/scraper.js";
 import { PricingStore } from "./modules/pricing/store.js";
 import { createScansModule } from "./modules/scans/index.js";
 import { ScansStore } from "./modules/scans/store.js";
+import { createUpdatesModule } from "./modules/updates/index.js";
+import { startUpdatesPoller } from "./modules/updates/poller.js";
+import { UpdatesStore } from "./modules/updates/store.js";
 import { createYourShopsModule } from "./modules/your-shops/index.js";
 import { YourShopsStore } from "./modules/your-shops/store.js";
 
@@ -99,6 +102,13 @@ registry.register(createLichModule(lichStore));
 const db = new CoreDb(process.env.DB_PATH || "data/gsiv.db");
 const eventLog = new EventLog(db);
 registry.register(createLogsModule(eventLog));
+
+// Updates: watch upstream VellumFE releases and alert in the bell. API-only;
+// VELLUM_VERSION is what the deployed binary's `--version` reports (set in the
+// server .env — the playbook records it on every swap).
+const updatesStore = new UpdatesStore(db, { currentVersion: process.env.VELLUM_VERSION });
+registry.register(createUpdatesModule(updatesStore));
+
 // Shared, mutable stream map for the gameview module + auto-provisioner, seeded
 // from VELLUM_STREAMS. Both read/write the same object so on-launch provisioning
 // never allocates a colliding port pair across requests.
@@ -190,3 +200,11 @@ const port = Number(process.env.PORT || 3100);
 const server = serve({ fetch: app.fetch, port }, () => console.log(`gsiv-platform listening on :${port}`));
 createWsBridge(server, auth, eventBus);
 eventLog.log("server_start", null, "gsiv-platform started");
+
+// Poll upstream releases for the bell. Read-only outbound HTTP on a timer; a
+// failed check is recorded (never thrown) so an outage can't take the box down.
+startUpdatesPoller(updatesStore, {
+  repo: process.env.UPDATES_REPO || "Nisugi/VellumFE",
+  token: process.env.UPDATES_GITHUB_TOKEN,
+  intervalMs: Number(process.env.UPDATES_POLL_MS || 6 * 60 * 60 * 1000),
+});
