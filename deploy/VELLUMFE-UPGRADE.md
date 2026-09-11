@@ -257,6 +257,14 @@ Then ack the bell in the dashboard; the next check should report no update
 available. Finally update this file's **Last run** line, the VellumFE version
 noted in `docs/STATUS.md` §5, and the backup trail below.
 
+**The bell step is automatic since 2026-09-11.** The `updates` module polls this
+repo's releases every 6h (`UPDATES_POLL_MS`) and files one 🔔 item per new tag —
+it is what tells you a release exists, so nothing here needs a manual version
+check. The item stays unread until you ack it (bell → Updates → *Mark all read*).
+`VELLUM_VERSION` in the server `.env` is the deployed `--version` string the check
+compares against; setting it here is what makes the check say "up to date" after a
+swap.
+
 ## 9. Rollback
 
 ```bash

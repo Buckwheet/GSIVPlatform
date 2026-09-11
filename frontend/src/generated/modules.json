@@ -146,6 +146,8 @@
     "scans.write",
     "yourshops.read",
     "yourshops.write",
+    "updates.read",
+    "updates.write",
     "gems.read",
     "gems.write",
     "healer.read",
