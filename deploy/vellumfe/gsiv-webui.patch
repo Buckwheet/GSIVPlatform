@@ -1,0 +1,78 @@
+--- a/src/frontend/web/assets/app.js
++++ b/src/frontend/web/assets/app.js
+@@ -133,6 +133,14 @@
+   };
+ })();
+ 
++// GSIVPlatform patch: auto-connect the Lich attach when a #lich= deep link
++// is present (the stock UI only prefills; this removes the manual Connect).
++let autoConnectLich = false;
++
++// GSIVPlatform: while the zero-click deep-link connect is in flight, the
++// attach form stays hidden and a "Connecting…" status shows instead.
++let zeroClickConnecting = false;
++
+ // Native-shell markers, also captured before the fragment is scrubbed.
+ // #app=1 says an iOS/Android shell is hosting this page: only there does
+ // the Remote login tab exist (its vellum:// actions need a shell to catch
+@@ -1021,6 +1029,27 @@
+ function setSession(d) {
+   const prevState = session.state;
+   session = d || { state: "connected", session_control: false };
++  // GSIVPlatform patch: zero-click Lich attach from a #lich= deep link.
++  if (autoConnectLich && session.session_control && (session.state === "idle" || session.state === "disconnected")) {
++    autoConnectLich = false;
++    sendJson("connect", {
++      mode: "lich",
++      host: bootLich.host,
++      port: bootLich.port,
++      character: bootLich.name || null,
++      profile_name: null,
++      custom_launch: null,
++    });
++  }
++  // GSIVPlatform: the zero-click window ends once the connect resolves
++  // (state leaves idle/disconnected) or fails (an error is set) — hand the
++  // login form back so a failed connect is never stranded.
++  if (zeroClickConnecting) {
++    if ((session.state !== "idle" && session.state !== "disconnected") || session.error) {
++      zeroClickConnecting = false;
++      sessionForm.hidden = false;
++    }
++  }
+   if (session.character) setCharacter(session.character);
+   // Lich WebUI is only usable on a Lich-attached session; the affordance
+   // (P5b) shows only when this is set.
+@@ -1085,8 +1114,15 @@
+ 
+   // idle / disconnected / authenticating / connecting → overlay.
+   const inProgress = session.state in SESSION_PROGRESS;
+-  sessionStatus.textContent = inProgress ? SESSION_PROGRESS[session.state] : "";
+-  sessionStatus.hidden = !inProgress;
++  if (zeroClickConnecting) {
++    // GSIVPlatform: keep the "Connecting…" status (not the form) up while
++    // the zero-click deep-link connect is in flight.
++    sessionStatus.textContent = "Connecting to the game…";
++    sessionStatus.hidden = false;
++  } else {
++    sessionStatus.textContent = inProgress ? SESSION_PROGRESS[session.state] : "";
++    sessionStatus.hidden = !inProgress;
++  }
+   sessionError.textContent = session.error || "";
+   sessionError.hidden = !session.error;
+   sessionForm.querySelectorAll("input, select, button").forEach((el) => {
+@@ -1228,6 +1264,14 @@
+   lichNameInput.value = bootLich.name;
+   lichHostInput.dispatchEvent(new Event("input"));
+   setLoginMode("lich");
++  autoConnectLich = true;
++  // GSIVPlatform: the zero-click connect is armed — hide the attach form
++  // (no login-form flash on a Watch deep link) and show a Connecting…
++  // status until the session settles.
++  zeroClickConnecting = true;
++  sessionForm.hidden = true;
++  sessionStatus.textContent = "Connecting to the game…";
++  sessionStatus.hidden = false;
+ }
+ 
+ // Remembered remote server: one-tap row above the manual fields. Connect
