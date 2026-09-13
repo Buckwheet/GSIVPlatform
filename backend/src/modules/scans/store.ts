@@ -2,7 +2,7 @@ import type { CoreDb } from "../../core/db.js";
 import type { EntryYaml } from "../../core/entry-yaml.js";
 import type { ScanCharResult, ScanStage } from "../../core/scan-runner.js";
 
-export type AccountStatus = "queued" | "running" | "done" | "partial" | "failed";
+export type AccountStatus = "queued" | "running" | "done" | "partial" | "failed" | "skipped";
 export type JobStatus = "running" | "done" | "partial" | "failed";
 
 /** A scan target character: its name plus whether a live session must be left alone. */
@@ -18,6 +18,8 @@ export interface ScanAccountState {
   status: AccountStatus;
   charsDone: number;
   charsFailed: number;
+  /** Live test/Shattered sessions left alone — neither done nor failed. */
+  charsSkipped: number;
   current: string | null;
   stage: ScanStage | null;
   error: string | null;
@@ -105,6 +107,7 @@ const MIGRATIONS = [
     error TEXT
   )`,
   `CREATE INDEX IF NOT EXISTS idx_scan_chars_job ON scan_chars(job_id)`,
+  `ALTER TABLE scan_accounts ADD COLUMN chars_skipped INTEGER NOT NULL DEFAULT 0`,
 ];
 
 export interface ScansStoreOptions {
@@ -207,6 +210,7 @@ export class ScansStore {
         status: "queued",
         charsDone: 0,
         charsFailed: 0,
+        charsSkipped: 0,
         current: null,
         stage: null,
         error: null,
@@ -248,6 +252,7 @@ export class ScansStore {
         chars_total: number;
         chars_done: number;
         chars_failed: number;
+        chars_skipped: number;
         error: string | null;
         chars: { char_name: string; result: string; code: string; reason: string | null }[];
       }[];
@@ -264,7 +269,7 @@ export class ScansStore {
       accounts_failed: number;
     }[];
     const acctStmt = this.db.prepare(
-      "SELECT account_name, status, chars_total, chars_done, chars_failed, error FROM scan_accounts WHERE job_id = ? ORDER BY account_name",
+      "SELECT account_name, status, chars_total, chars_done, chars_failed, chars_skipped, error FROM scan_accounts WHERE job_id = ? ORDER BY account_name",
     );
     const charsStmt = this.db.prepare(
       "SELECT char_name, result, code, reason FROM scan_chars WHERE job_id = ? AND account_name = ? ORDER BY char_name",
@@ -279,6 +284,7 @@ export class ScansStore {
             chars_total: number;
             chars_done: number;
             chars_failed: number;
+            chars_skipped: number;
             error: string | null;
           }[]
         ).map((a) => ({
@@ -329,6 +335,7 @@ export class ScansStore {
           else if (res.result === "skipped") {
             // A live test/Shattered session deliberately left alone. Not a failure —
             // no charsFailed bump — but it still gets an audit row in scan_chars.
+            acct.charsSkipped += 1;
             skipped.push(char.name);
           } else {
             acct.charsFailed += 1;
@@ -341,7 +348,17 @@ export class ScansStore {
         if (failures.length > 0) {
           acct.failures = await this.classify(acct.account, failures);
         }
-        acct.status = acct.charsFailed === 0 ? "done" : acct.charsDone === 0 ? "failed" : "partial";
+        // An account where nothing was actually scanned must not read as "done":
+        // a Shattered account skipped every night would otherwise look identical
+        // to one that scanned clean (issue #93).
+        acct.status =
+          acct.charsFailed > 0
+            ? acct.charsDone === 0
+              ? "failed"
+              : "partial"
+            : acct.charsDone === 0 && acct.chars.length > 0
+              ? "skipped"
+              : "done";
         acct.finishedAt = this.now();
         this.persistAccount(acct, skipped);
         this.emit("scan_update", this.snapshot());
@@ -368,8 +385,8 @@ export class ScansStore {
     if (jobId == null) return;
     this.db
       .prepare(
-        `INSERT INTO scan_accounts (job_id, account_name, status, chars_total, chars_done, chars_failed, error, started_at, finished_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO scan_accounts (job_id, account_name, status, chars_total, chars_done, chars_failed, chars_skipped, error, started_at, finished_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         jobId,
@@ -378,6 +395,7 @@ export class ScansStore {
         acct.chars.length,
         acct.charsDone,
         acct.charsFailed,
+        acct.charsSkipped,
         acct.error,
         acct.startedAt,
         acct.finishedAt,

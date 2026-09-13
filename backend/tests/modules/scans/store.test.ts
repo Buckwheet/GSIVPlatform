@@ -230,14 +230,18 @@ describe("ScansStore", () => {
     await store.whenIdle();
     const acct = store.currentJob()?.accounts.find((a) => a.account === "TESTACCT");
     expect(acct?.charsFailed).toBe(0);
+    expect(acct?.charsSkipped).toBe(1);
     expect(acct?.charsDone).toBe(1); // Zephshattered scanned fine
     expect(acct?.failures).toEqual([]);
+    // A mix of done + skipped is still "done" — only an account where nothing at
+    // all was scanned gets the new status.
     expect(acct?.status).toBe("done");
     expect(store.currentJob()?.status).toBe("done"); // skipped is not a failure anywhere
     expect(events.some((e) => e.type === "scan_alert")).toBe(false);
     expect(logs.some((l) => l.startsWith("scan_partial:"))).toBe(false);
     const histAcct = store.history().jobs[0].accounts.find((a) => a.account_name === "TESTACCT");
     expect(histAcct?.chars_failed).toBe(0);
+    expect(histAcct?.chars_skipped).toBe(1);
     expect(histAcct?.chars).toEqual([
       {
         char_name: "Tunetest",
@@ -246,5 +250,42 @@ describe("ScansStore", () => {
         reason: "already playing — live session left untouched",
       },
     ]);
+  });
+
+  it('reports an account where every char was skipped as "skipped", not "done"', async () => {
+    const { store, events, logs } = makeStore({
+      yamlBody: ROSTER_WITH_TEST_CHARS,
+      okAccounts: ["BUCKWHEET", "TESTACCT"],
+      results: { Tunetest: "skipped", Zephshattered: "skipped" },
+    });
+    store.start();
+    await store.whenIdle();
+    const acct = store.currentJob()?.accounts.find((a) => a.account === "TESTACCT");
+    expect(acct?.status).toBe("skipped");
+    expect(acct?.charsSkipped).toBe(2);
+    expect(acct?.charsDone).toBe(0);
+    expect(acct?.charsFailed).toBe(0);
+    expect(acct?.failures).toEqual([]);
+    // The account that did scan is unaffected, and the job is still not a failure.
+    expect(store.currentJob()?.accounts.find((a) => a.account === "BUCKWHEET")?.status).toBe("done");
+    expect(store.currentJob()?.status).toBe("done");
+    expect(events.some((e) => e.type === "scan_alert")).toBe(false);
+    expect(logs.some((l) => l.startsWith("scan_partial:"))).toBe(false);
+    const histAcct = store.history().jobs[0].accounts.find((a) => a.account_name === "TESTACCT");
+    expect(histAcct?.status).toBe("skipped");
+    expect(histAcct?.chars_skipped).toBe(2);
+    expect(histAcct?.chars_failed).toBe(0);
+  });
+
+  it("does not re-queue an all-skipped account via retry()", async () => {
+    const { store } = makeStore({
+      yamlBody: ROSTER_WITH_TEST_CHARS,
+      okAccounts: ["BUCKWHEET", "TESTACCT"],
+      results: { Tunetest: "skipped", Zephshattered: "skipped" },
+    });
+    store.start();
+    await store.whenIdle();
+    // retry() only picks up failed/partial accounts — a skip is neither.
+    expect(store.retry(store.currentJob()?.id ?? 0)).toEqual({ ok: false, error: "no failed accounts to retry" });
   });
 });

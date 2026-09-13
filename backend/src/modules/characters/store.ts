@@ -22,6 +22,7 @@ export interface CharacterRow {
 export type ActionResult = { ok: boolean; error?: string; was_managed?: boolean };
 
 const MANAGED_KEY = "characters:managed";
+const STOPPED_KEY = "characters:stopped";
 
 export class CharactersStore {
   constructor(
@@ -44,12 +45,34 @@ export class CharactersStore {
   }
 
   /**
+   * Characters a human deliberately stopped. `managed` alone can't tell "never
+   * seeded" from "stopped on purpose", so the boot reconcile needs this second
+   * set to avoid re-managing (and so the watchdog restarting) a deliberate stop.
+   */
+  private async stoppedSet(): Promise<Set<string>> {
+    const raw = await this.kv.get(STOPPED_KEY);
+    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+  }
+
+  private async setStopped(name: string, stopped: boolean): Promise<void> {
+    const set = await this.stoppedSet();
+    const key = name.toLowerCase();
+    if (stopped) set.add(key);
+    else set.delete(key);
+    await this.kv.set(STOPPED_KEY, JSON.stringify([...set]));
+  }
+
+  /**
    * Reconcile the managed list with entry.yaml at boot: seed it when empty,
    * otherwise add any yaml character the list is missing (v1 seeded its DB at boot).
+   * Deliberately stopped characters are never re-added.
    */
   async seedManagedIfEmpty(): Promise<void> {
     const existing = await this.kv.get(MANAGED_KEY);
-    const yamlNames = this.yamlChars().map((c) => c.char_name.toLowerCase());
+    const stopped = await this.stoppedSet();
+    const yamlNames = this.yamlChars()
+      .map((c) => c.char_name.toLowerCase())
+      .filter((n) => !stopped.has(n));
     if (existing === null) {
       await this.kv.set(MANAGED_KEY, JSON.stringify(yamlNames));
       return;
@@ -111,7 +134,12 @@ export class CharactersStore {
     const res = await this.systemd.action("start", ch.char_name);
     // Re-manage on success: a stopped char stays unmanaged (see stop()), so without
     // this the watchdog would never cover it again after one deliberate stop.
-    if (res.ok) await this.setManaged(ch.char_name, true);
+    // Starting it also clears the deliberate-stop mark, so a later boot reconcile
+    // leaves it alone (it is managed again, so there is nothing to reconcile).
+    if (res.ok) {
+      await this.setManaged(ch.char_name, true);
+      await this.setStopped(ch.char_name, false);
+    }
     return res;
   }
 
@@ -121,7 +149,10 @@ export class CharactersStore {
     if (!ch) return null;
     const wasManaged = (await this.managed()).includes(ch.char_name.toLowerCase());
     const res = await this.systemd.action("stop", ch.char_name);
-    if (res.ok && wasManaged) await this.setManaged(ch.char_name, false);
+    if (res.ok && wasManaged) {
+      await this.setManaged(ch.char_name, false);
+      await this.setStopped(ch.char_name, true);
+    }
     return { ...res, was_managed: wasManaged };
   }
 

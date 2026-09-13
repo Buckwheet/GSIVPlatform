@@ -17,6 +17,7 @@ interface ScanAccountState {
   status: string;
   charsDone: number;
   charsFailed: number;
+  charsSkipped: number;
   current: string | null;
   stage: string | null;
   error: string | null;
@@ -41,6 +42,7 @@ interface HistoryAccount {
   chars_total: number;
   chars_done: number;
   chars_failed: number;
+  chars_skipped: number;
   error: string | null;
   chars: { char_name: string; result: string; code: string; reason: string | null }[];
 }
@@ -85,6 +87,13 @@ const FAILURE_TONE: Record<string, string> = {
   transient: "var(--text-muted)",
   start_failed: "var(--text-muted)",
 };
+
+/**
+ * `code: "skipped"` rows are not failures — they are live test/Shattered sessions
+ * the scan deliberately left alone. They are surfaced as `charsSkipped` in the
+ * account summary instead of in the red "failed characters" panel.
+ */
+const isFailureRow = (c: { code: string }) => c.code !== "skipped";
 
 export default function Scans({ auth }: { auth: AuthState }) {
   const [status, setStatus] = useState<ScanStatus>({ running: false, job: null });
@@ -262,7 +271,9 @@ export default function Scans({ auth }: { auth: AuthState }) {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <strong>{a.account}</strong>
                   <span className="muted" style={{ fontSize: "var(--font-size-sm)" }}>
-                    {a.charsDone}/{a.chars.length} chars · {a.status}
+                    {a.charsDone}/{a.chars.length} chars
+                    {a.charsSkipped > 0 ? ` (${a.charsSkipped} skipped)` : ""} ·{" "}
+                    <span style={{ color: a.status === "skipped" ? "var(--muted-strong)" : undefined }}>{a.status}</span>
                   </span>
                 </div>
                 <div style={{ height: 6, background: "var(--border)", borderRadius: 3, margin: "var(--space-1) 0", overflow: "hidden" }}>
@@ -310,15 +321,15 @@ export default function Scans({ auth }: { auth: AuthState }) {
                   retry
                 </Button>
               )}
-              {h.accounts.some((a) => a.chars && a.chars.length > 0) && (
+              {h.accounts.some((a) => a.chars && a.chars.some(isFailureRow)) && (
                 <details style={{ marginTop: "var(--space-1)" }}>
                   <summary style={{ cursor: "pointer" }}>failed characters</summary>
                   {h.accounts
-                    .filter((a) => a.chars && a.chars.length > 0)
+                    .filter((a) => a.chars && a.chars.some(isFailureRow))
                     .map((a) => (
                       <div key={a.account_name} style={{ margin: "var(--space-1) 0" }}>
                         <strong>{a.account_name}</strong>
-                        {a.chars.map((c) => (
+                        {a.chars.filter(isFailureRow).map((c) => (
                           <div key={c.char_name} style={{ marginLeft: "var(--space-2)", color: FAILURE_TONE[c.code] ?? "var(--bad)" }}>
                             ✗ {c.char_name} — <strong>{c.code}</strong> {c.reason ?? ""}
                           </div>

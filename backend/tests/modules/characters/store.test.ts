@@ -7,9 +7,9 @@ import { CharactersStore } from "../../../src/modules/characters/store.js";
 
 const FIXTURE = join(import.meta.dirname, "..", "..", "fixtures", "entry-yaml.fixture.yaml");
 
-function makeStore(exec: ExecFn) {
+function makeStore(exec: ExecFn, kv = new InMemoryKV()) {
   const systemd = new Systemd(exec, { sudoActions: false });
-  return { store: new CharactersStore(new InMemoryKV(), new EntryYaml(FIXTURE), systemd), systemd };
+  return { kv, store: new CharactersStore(kv, new EntryYaml(FIXTURE), systemd), systemd };
 }
 
 describe("CharactersStore", () => {
@@ -126,5 +126,32 @@ describe("CharactersStore", () => {
     expect(records).toEqual([{ cmd: "systemctl", args: ["stop", "gs4sd-lich@Fisternar.service"] }]);
     expect(await store.managed()).toEqual(["zepherus", "neleourg"]);
     expect(await store.stop("Ghost")).toBeNull();
+  });
+
+  it("keeps a deliberately stopped char unmanaged across a boot reconcile (issue #93)", async () => {
+    const { store } = makeStore(async () => ({ stdout: "", stderr: "", code: 0 }));
+    await store.seedManagedIfEmpty();
+    await store.stop("fisternar");
+    expect(await store.managed()).toEqual(["zepherus", "neleourg"]);
+    await store.seedManagedIfEmpty(); // the next platform boot
+    expect(await store.managed()).toEqual(["zepherus", "neleourg"]); // NOT silently re-managed
+  });
+
+  it("clears the deliberate-stop mark when the char is started again", async () => {
+    const { store } = makeStore(async () => ({ stdout: "", stderr: "", code: 0 }));
+    await store.seedManagedIfEmpty();
+    await store.stop("fisternar");
+    await store.start("fisternar");
+    expect(await store.managed()).toEqual(["zepherus", "neleourg", "fisternar"]);
+    await store.seedManagedIfEmpty();
+    expect(await store.managed()).toEqual(["zepherus", "neleourg", "fisternar"]); // no duplicate, nothing re-added
+  });
+
+  it("does not seed a deliberately stopped char when the managed key is missing", async () => {
+    const kv = new InMemoryKV();
+    await kv.set("characters:stopped", JSON.stringify(["fisternar"]));
+    const { store } = makeStore(async () => ({ stdout: "", stderr: "", code: 1 }), kv);
+    await store.seedManagedIfEmpty();
+    expect(await store.managed()).toEqual(["zepherus", "neleourg"]);
   });
 });
