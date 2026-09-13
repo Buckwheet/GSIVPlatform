@@ -21,11 +21,10 @@ const charFailureSchema = z.object({
 
 const accountSchema = z.object({
   account: z.string(),
-  chars: z.array(z.object({ name: z.string(), skipIfActive: z.boolean() })),
+  chars: z.array(z.string()),
   status: z.string(),
   charsDone: z.number(),
   charsFailed: z.number(),
-  charsSkipped: z.number(),
   current: z.string().nullable(),
   stage: z.string().nullable(),
   error: z.string().nullable(),
@@ -126,7 +125,6 @@ const historyRoute = createRoute({
                     chars_total: z.number(),
                     chars_done: z.number(),
                     chars_failed: z.number(),
-                    chars_skipped: z.number(),
                     error: z.string().nullable(),
                     chars: z.array(
                       z.object({
@@ -170,12 +168,7 @@ const targetsRoute = createRoute({
     200: {
       content: {
         "application/json": {
-          schema: z.array(
-            z.object({
-              account: z.string(),
-              chars: z.array(z.object({ name: z.string(), skipIfActive: z.boolean() })),
-            }),
-          ),
+          schema: z.array(z.object({ account: z.string(), chars: z.array(z.string()) })),
         },
       },
       description: "available scan targets",

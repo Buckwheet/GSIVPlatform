@@ -15,17 +15,12 @@ function makeDeps(overrides: Partial<ScanRunnerDeps> = {}) {
     ts,
     starts: [] as string[],
     stops: [] as string[],
-    shows: [] as string[],
     scripts: [] as string[],
     systemd: {
       async action(action: "start" | "stop", name: string) {
         (action === "start" ? deps.starts : deps.stops).push(name);
         return { ok: true };
       },
-    },
-    async show(name: string) {
-      deps.shows.push(name);
-      return { active: false };
     },
     invDb: { charTimestamp: (name: string) => ts.get(name) ?? null },
     async sendScript(char: string, script: string) {
@@ -45,7 +40,7 @@ describe("ScanRunner", () => {
     const deps = makeDeps();
     const runner = new ScanRunner(deps, FAST);
     const stages: string[] = [];
-    const res = await runner.scanChar("Fisternar", false, (s) => stages.push(s));
+    const res = await runner.scanChar("Fisternar", (s) => stages.push(s));
     expect(res).toEqual({ char: "Fisternar", result: "done" });
     expect(deps.starts).toEqual(["Fisternar"]);
     expect(deps.stops).toEqual(["Fisternar"]);
@@ -62,7 +57,7 @@ describe("ScanRunner", () => {
       },
     });
     const runner = new ScanRunner(deps, FAST);
-    const res = await runner.scanChar("Fisternar", false);
+    const res = await runner.scanChar("Fisternar");
     expect(res.result).toBe("failed");
     expect(res.error).toBe("no unit");
   });
@@ -70,7 +65,7 @@ describe("ScanRunner", () => {
   it("times out when the char never comes online", async () => {
     const deps = makeDeps({ isOnline: async () => false });
     const runner = new ScanRunner(deps, FAST);
-    const res = await runner.scanChar("Fisternar", false);
+    const res = await runner.scanChar("Fisternar");
     expect(res.result).toBe("timeout");
     expect(deps.stops).toEqual(["Fisternar"]); // cleaned up the unit
   });
@@ -82,49 +77,8 @@ describe("ScanRunner", () => {
       deps.scripts.push(`${c}:${s}`);
     };
     const runner = new ScanRunner(deps, FAST);
-    const res = await runner.scanChar("Fisternar", false);
+    const res = await runner.scanChar("Fisternar");
     expect(res.result).toBe("timeout");
     expect(res.error).toBe("no invdb write");
-  });
-
-  it("skips a live test/Shattered char without touching its unit (issue #93)", async () => {
-    const deps = makeDeps();
-    deps.show = async (name: string) => {
-      deps.shows.push(name);
-      return { active: true };
-    };
-    const runner = new ScanRunner(deps, FAST);
-    const stages: string[] = [];
-    const res = await runner.scanChar("Tune", true, (s, detail) => stages.push(`${s}:${detail}`));
-    expect(res).toEqual({ char: "Tune", result: "skipped" });
-    expect(deps.shows).toEqual(["Tune"]);
-    expect(deps.starts).toEqual([]); // never started the unit
-    expect(deps.stops).toEqual([]); // and never stopped a live session
-    expect(deps.scripts).toEqual([]); // no command injected into the live session
-    expect(stages).toEqual(["skipped:already playing"]);
-  });
-
-  it("runs the normal cycle for a test/Shattered char whose session is not active", async () => {
-    const deps = makeDeps();
-    const runner = new ScanRunner(deps, FAST);
-    const res = await runner.scanChar("Tune", true);
-    expect(res).toEqual({ char: "Tune", result: "done" });
-    expect(deps.shows).toEqual(["Tune"]);
-    expect(deps.starts).toEqual(["Tune"]);
-    expect(deps.stops).toEqual(["Tune"]);
-  });
-
-  it("still bounces an active production char and never asks for its status", async () => {
-    const deps = makeDeps();
-    deps.show = async (name: string) => {
-      deps.shows.push(name);
-      return { active: true };
-    };
-    const runner = new ScanRunner(deps, FAST);
-    const res = await runner.scanChar("Fisternar", false);
-    expect(res).toEqual({ char: "Fisternar", result: "done" });
-    expect(deps.starts).toEqual(["Fisternar"]);
-    expect(deps.stops).toEqual(["Fisternar"]);
-    expect(deps.shows).toEqual([]); // production path short-circuits the check
   });
 });
