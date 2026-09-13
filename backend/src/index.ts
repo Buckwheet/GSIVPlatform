@@ -159,11 +159,8 @@ const totp = new Totp();
 registry.register(createAccountsModule(accountsStore, totp));
 
 // Scans: invdb scan orchestrator (5 concurrent accounts) via review-gated capabilities.
-const scanSystemd = new Systemd();
 const scanRunner = new ScanRunner({
-  systemd: scanSystemd,
-  // Read-only check: the runner must never bounce a live test/Shattered session (issue #93).
-  show: (name) => scanSystemd.show(name),
+  systemd: new Systemd(),
   invDb: new InvDb(),
   sendScript: async (char, script) => {
     await lichStore.pushCommand(char, "scan", script);

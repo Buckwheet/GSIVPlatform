@@ -2,24 +2,15 @@ import type { CoreDb } from "../../core/db.js";
 import type { EntryYaml } from "../../core/entry-yaml.js";
 import type { ScanCharResult, ScanStage } from "../../core/scan-runner.js";
 
-export type AccountStatus = "queued" | "running" | "done" | "partial" | "failed" | "skipped";
+export type AccountStatus = "queued" | "running" | "done" | "partial" | "failed";
 export type JobStatus = "running" | "done" | "partial" | "failed";
-
-/** A scan target character: its name plus whether a live session must be left alone. */
-export interface ScanTargetChar {
-  name: string;
-  /** True for test/Shattered chars (game_code GST/GSF) — never bounce a live session. */
-  skipIfActive: boolean;
-}
 
 export interface ScanAccountState {
   account: string;
-  chars: ScanTargetChar[];
+  chars: string[];
   status: AccountStatus;
   charsDone: number;
   charsFailed: number;
-  /** Live test/Shattered sessions left alone — neither done nor failed. */
-  charsSkipped: number;
   current: string | null;
   stage: ScanStage | null;
   error: string | null;
@@ -38,16 +29,12 @@ export interface ScanJob {
 
 export interface ScanTarget {
   account: string;
-  chars: ScanTargetChar[];
+  chars: string[];
 }
 
 /** Narrow scanner surface the store depends on (ScanRunner satisfies it). */
 export interface CharScanner {
-  scanChar(
-    char: string,
-    skipIfActive: boolean,
-    onStage?: (stage: ScanStage, detail: string) => void,
-  ): Promise<ScanCharResult>;
+  scanChar(char: string, onStage?: (stage: ScanStage, detail: string) => void): Promise<ScanCharResult>;
 }
 
 /** A failed character as the runner reports it (never "done"). */
@@ -107,7 +94,6 @@ const MIGRATIONS = [
     error TEXT
   )`,
   `CREATE INDEX IF NOT EXISTS idx_scan_chars_job ON scan_chars(job_id)`,
-  `ALTER TABLE scan_accounts ADD COLUMN chars_skipped INTEGER NOT NULL DEFAULT 0`,
 ];
 
 export interface ScansStoreOptions {
@@ -119,9 +105,6 @@ export interface ScansStoreOptions {
 }
 
 const DEFAULT_SKIP = ["UNFOCUSEDPIE"];
-
-/** Test (GST) and Shattered (GSF) characters — units that run unattended while live. */
-const TEST_GAME_CODES = new Set(["GST", "GSF"]);
 
 function defaultOkAccounts(db: CoreDb): () => string[] {
   return () => {
@@ -178,7 +161,7 @@ export class ScansStore {
 
   /** account -> chars target set (default = auth-ok minus skip; explicit overrides auth filter). */
   targets(explicit?: string[]): ScanTarget[] {
-    const map = new Map<string, ScanTargetChar[]>();
+    const map = new Map<string, string[]>();
     const okSet = explicit ? null : new Set(this.okAccounts());
     const want = explicit ? new Set(explicit.map((s) => s.toUpperCase())) : null;
     for (const ch of this.yaml.read()) {
@@ -186,7 +169,7 @@ export class ScansStore {
       if (okSet && !okSet.has(ch.account)) continue;
       if (want && !want.has(ch.account)) continue;
       const list = map.get(ch.account) ?? [];
-      list.push({ name: ch.char_name, skipIfActive: TEST_GAME_CODES.has(ch.game_code) });
+      list.push(ch.char_name);
       map.set(ch.account, list);
     }
     return [...map.entries()]
@@ -210,7 +193,6 @@ export class ScansStore {
         status: "queued",
         charsDone: 0,
         charsFailed: 0,
-        charsSkipped: 0,
         current: null,
         stage: null,
         error: null,
@@ -252,7 +234,6 @@ export class ScansStore {
         chars_total: number;
         chars_done: number;
         chars_failed: number;
-        chars_skipped: number;
         error: string | null;
         chars: { char_name: string; result: string; code: string; reason: string | null }[];
       }[];
@@ -269,7 +250,7 @@ export class ScansStore {
       accounts_failed: number;
     }[];
     const acctStmt = this.db.prepare(
-      "SELECT account_name, status, chars_total, chars_done, chars_failed, chars_skipped, error FROM scan_accounts WHERE job_id = ? ORDER BY account_name",
+      "SELECT account_name, status, chars_total, chars_done, chars_failed, error FROM scan_accounts WHERE job_id = ? ORDER BY account_name",
     );
     const charsStmt = this.db.prepare(
       "SELECT char_name, result, code, reason FROM scan_chars WHERE job_id = ? AND account_name = ? ORDER BY char_name",
@@ -284,7 +265,6 @@ export class ScansStore {
             chars_total: number;
             chars_done: number;
             chars_failed: number;
-            chars_skipped: number;
             error: string | null;
           }[]
         ).map((a) => ({
@@ -322,25 +302,19 @@ export class ScansStore {
         acct.startedAt = this.now();
         this.emit("scan_update", this.snapshot());
         const failures: CharFailure[] = [];
-        const skipped: string[] = [];
         for (const char of acct.chars) {
-          acct.current = char.name;
+          acct.current = char;
           acct.stage = "starting";
           this.emit("scan_update", this.snapshot());
-          const res = await this.runner.scanChar(char.name, char.skipIfActive, (stage) => {
+          const res = await this.runner.scanChar(char, (stage) => {
             acct.stage = stage;
             this.emit("scan_update", this.snapshot());
           });
           if (res.result === "done") acct.charsDone += 1;
-          else if (res.result === "skipped") {
-            // A live test/Shattered session deliberately left alone. Not a failure —
-            // no charsFailed bump — but it still gets an audit row in scan_chars.
-            acct.charsSkipped += 1;
-            skipped.push(char.name);
-          } else {
+          else {
             acct.charsFailed += 1;
-            acct.error = acct.error ?? `${char.name}: ${res.error ?? res.result}`;
-            failures.push({ char: char.name, result: res.result, error: res.error });
+            acct.error = acct.error ?? `${char}: ${res.error ?? res.result}`;
+            failures.push({ char, result: res.result, error: res.error });
           }
           acct.current = null;
           acct.stage = null;
@@ -348,19 +322,9 @@ export class ScansStore {
         if (failures.length > 0) {
           acct.failures = await this.classify(acct.account, failures);
         }
-        // An account where nothing was actually scanned must not read as "done":
-        // a Shattered account skipped every night would otherwise look identical
-        // to one that scanned clean (issue #93).
-        acct.status =
-          acct.charsFailed > 0
-            ? acct.charsDone === 0
-              ? "failed"
-              : "partial"
-            : acct.charsDone === 0 && acct.chars.length > 0
-              ? "skipped"
-              : "done";
+        acct.status = acct.charsFailed === 0 ? "done" : acct.charsDone === 0 ? "failed" : "partial";
         acct.finishedAt = this.now();
-        this.persistAccount(acct, skipped);
+        this.persistAccount(acct);
         this.emit("scan_update", this.snapshot());
       }
     };
@@ -380,13 +344,13 @@ export class ScansStore {
     }
   }
 
-  private persistAccount(acct: ScanAccountState, skipped: string[] = []): void {
+  private persistAccount(acct: ScanAccountState): void {
     const jobId = this.current?.id;
     if (jobId == null) return;
     this.db
       .prepare(
-        `INSERT INTO scan_accounts (job_id, account_name, status, chars_total, chars_done, chars_failed, chars_skipped, error, started_at, finished_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO scan_accounts (job_id, account_name, status, chars_total, chars_done, chars_failed, error, started_at, finished_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         jobId,
@@ -395,7 +359,6 @@ export class ScansStore {
         acct.chars.length,
         acct.charsDone,
         acct.charsFailed,
-        acct.charsSkipped,
         acct.error,
         acct.startedAt,
         acct.finishedAt,
@@ -406,17 +369,6 @@ export class ScansStore {
     );
     for (const f of acct.failures) {
       insChar.run(jobId, acct.account, f.char, f.result, f.code, f.reason, f.error ?? null);
-    }
-    for (const name of skipped) {
-      insChar.run(
-        jobId,
-        acct.account,
-        name,
-        "skipped",
-        "skipped",
-        "already playing — live session left untouched",
-        null,
-      );
     }
   }
 
