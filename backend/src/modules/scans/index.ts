@@ -21,7 +21,7 @@ const charFailureSchema = z.object({
 
 const accountSchema = z.object({
   account: z.string(),
-  chars: z.array(z.string()),
+  chars: z.array(z.object({ name: z.string(), skipIfActive: z.boolean() })),
   status: z.string(),
   charsDone: z.number(),
   charsFailed: z.number(),
@@ -168,7 +168,12 @@ const targetsRoute = createRoute({
     200: {
       content: {
         "application/json": {
-          schema: z.array(z.object({ account: z.string(), chars: z.array(z.string()) })),
+          schema: z.array(
+            z.object({
+              account: z.string(),
+              chars: z.array(z.object({ name: z.string(), skipIfActive: z.boolean() })),
+            }),
+          ),
         },
       },
       description: "available scan targets",

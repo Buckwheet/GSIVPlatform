@@ -1,4 +1,4 @@
-import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -12,36 +12,62 @@ const TMP = mkdtempSync(join(tmpdir(), "scans-store-"));
 let counter = 0;
 afterAll(() => rmSync(TMP, { recursive: true, force: true }));
 
+/** One production char plus a test (GST) and a Shattered (GSF) char. */
+const ROSTER_WITH_TEST_CHARS = `accounts:
+  Buckwheet:
+    characters:
+      - char_name: Fisternar
+        game_code: GSIV
+  Testacct:
+    characters:
+      - char_name: Tunetest
+        game_code: GSF
+      - char_name: Zephshattered
+        game_code: GST
+`;
+
 type Emitted = { type: string; payload: unknown };
 function makeStore(
   opts: {
-    results?: Record<string, "done" | "failed">;
+    results?: Record<string, "done" | "failed" | "skipped">;
     maxConcurrent?: number;
     okAccounts?: string[];
     skipAccounts?: string[];
     classifier?: CharFailureClassifier;
+    yamlBody?: string;
   } = {},
 ) {
   const db = new CoreDb(":memory:");
   const yamlPath = join(TMP, `entry-${++counter}.yaml`);
-  copyFileSync(FIXTURE, yamlPath);
+  if (opts.yamlBody) writeFileSync(yamlPath, opts.yamlBody);
+  else copyFileSync(FIXTURE, yamlPath);
   const events: Emitted[] = [];
   const logs: string[] = [];
   let active = 0;
   let maxActive = 0;
   const started: string[] = [];
+  const seen: { name: string; skipIfActive: boolean }[] = [];
   const results = opts.results ?? {};
   const runner = {
     started,
+    seen,
     maxActive: () => maxActive,
-    async scanChar(char: string, onStage?: (stage: ScanStage, detail: string) => void): Promise<ScanCharResult> {
+    async scanChar(
+      char: string,
+      skipIfActive: boolean,
+      onStage?: (stage: ScanStage, detail: string) => void,
+    ): Promise<ScanCharResult> {
       active += 1;
       maxActive = Math.max(maxActive, active);
       started.push(char);
+      seen.push({ name: char, skipIfActive });
       onStage?.("scanning", char);
       await new Promise((r) => setTimeout(r, 5));
       active -= 1;
-      return results[char] === "failed" ? { char, result: "failed", error: "boom" } : { char, result: "done" };
+      const result = results[char] ?? "done";
+      if (result === "failed") return { char, result: "failed", error: "boom" };
+      if (result === "skipped") return { char, result: "skipped" };
+      return { char, result: "done" };
     },
   };
   const store = new ScansStore(
@@ -57,7 +83,7 @@ function makeStore(
       classifier: opts.classifier,
     },
   );
-  return { db, store, events, logs, runner, started };
+  return { db, store, events, logs, runner, started, seen };
 }
 
 describe("ScansStore", () => {
@@ -65,7 +91,29 @@ describe("ScansStore", () => {
     const { store } = makeStore({ okAccounts: ["BUCKWHEET"], skipAccounts: ["BUCKWHEET"] });
     expect(store.targets()).toEqual([]); // skipped
     const { store: s2 } = makeStore({ okAccounts: ["BUCKWHEET"] });
-    expect(s2.targets()).toEqual([{ account: "BUCKWHEET", chars: ["Fisternar", "Zepherus"] }]);
+    expect(s2.targets()).toEqual([
+      {
+        account: "BUCKWHEET",
+        chars: [
+          { name: "Fisternar", skipIfActive: false },
+          { name: "Zepherus", skipIfActive: false },
+        ],
+      },
+    ]);
+  });
+
+  it("targets() flags GST/GSF chars skipIfActive and production chars not", () => {
+    const { store } = makeStore({ yamlBody: ROSTER_WITH_TEST_CHARS, okAccounts: ["BUCKWHEET", "TESTACCT"] });
+    expect(store.targets()).toEqual([
+      { account: "BUCKWHEET", chars: [{ name: "Fisternar", skipIfActive: false }] },
+      {
+        account: "TESTACCT",
+        chars: [
+          { name: "Tunetest", skipIfActive: true },
+          { name: "Zephshattered", skipIfActive: true },
+        ],
+      },
+    ]);
   });
 
   it("start() runs a job to completion and persists it", async () => {
@@ -161,5 +209,42 @@ describe("ScansStore", () => {
     await store.whenIdle();
     const hist = store.history();
     expect(hist.jobs[0].accounts.every((a) => a.chars.length === 0)).toBe(true);
+  });
+
+  it("passes each char's skipIfActive through to the runner", async () => {
+    const { store, seen } = makeStore({ yamlBody: ROSTER_WITH_TEST_CHARS, okAccounts: ["BUCKWHEET", "TESTACCT"] });
+    store.start();
+    await store.whenIdle();
+    expect(seen.find((s) => s.name === "Fisternar")?.skipIfActive).toBe(false);
+    expect(seen.find((s) => s.name === "Tunetest")?.skipIfActive).toBe(true);
+    expect(seen.find((s) => s.name === "Zephshattered")?.skipIfActive).toBe(true);
+  });
+
+  it("counts a skipped char as neither success nor failure, with an audit row", async () => {
+    const { store, events, logs } = makeStore({
+      yamlBody: ROSTER_WITH_TEST_CHARS,
+      okAccounts: ["BUCKWHEET", "TESTACCT"],
+      results: { Tunetest: "skipped" },
+    });
+    store.start();
+    await store.whenIdle();
+    const acct = store.currentJob()?.accounts.find((a) => a.account === "TESTACCT");
+    expect(acct?.charsFailed).toBe(0);
+    expect(acct?.charsDone).toBe(1); // Zephshattered scanned fine
+    expect(acct?.failures).toEqual([]);
+    expect(acct?.status).toBe("done");
+    expect(store.currentJob()?.status).toBe("done"); // skipped is not a failure anywhere
+    expect(events.some((e) => e.type === "scan_alert")).toBe(false);
+    expect(logs.some((l) => l.startsWith("scan_partial:"))).toBe(false);
+    const histAcct = store.history().jobs[0].accounts.find((a) => a.account_name === "TESTACCT");
+    expect(histAcct?.chars_failed).toBe(0);
+    expect(histAcct?.chars).toEqual([
+      {
+        char_name: "Tunetest",
+        result: "skipped",
+        code: "skipped",
+        reason: "already playing — live session left untouched",
+      },
+    ]);
   });
 });

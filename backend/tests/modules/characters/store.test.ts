@@ -13,13 +13,21 @@ function makeStore(exec: ExecFn) {
 }
 
 describe("CharactersStore", () => {
-  it("seedManagedIfEmpty seeds once from entry.yaml and never re-seeds", async () => {
+  it("seedManagedIfEmpty seeds from entry.yaml, then only reconciles", async () => {
     const { store } = makeStore(async () => ({ stdout: "", stderr: "", code: 1 }));
     await store.seedManagedIfEmpty();
     expect(await store.managed()).toEqual(["fisternar", "zepherus", "neleourg"]);
-    await store.setManaged("Fisternar", false);
     await store.seedManagedIfEmpty();
+    expect(await store.managed()).toEqual(["fisternar", "zepherus", "neleourg"]); // no duplicates
+  });
+
+  it("seedManagedIfEmpty re-adds yaml chars missing from an existing managed list", async () => {
+    const { store } = makeStore(async () => ({ stdout: "", stderr: "", code: 1 }));
+    await store.seedManagedIfEmpty();
+    await store.setManaged("Fisternar", false);
     expect(await store.managed()).toEqual(["zepherus", "neleourg"]);
+    await store.seedManagedIfEmpty();
+    expect(await store.managed()).toEqual(["zepherus", "neleourg", "fisternar"]);
   });
 
   it("list() enriches yaml chars with systemd status, unit, and managed flag", async () => {
@@ -76,6 +84,26 @@ describe("CharactersStore", () => {
       { cmd: "systemctl", args: ["start", "gs4sd-lich@Fisternar.service"] },
       { cmd: "systemctl", args: ["start", "gs4sd-lich@Zepherus.service"] },
     ]);
+  });
+
+  it("start() re-manages the char so the watchdog covers it again (issue #93)", async () => {
+    const { store } = makeStore(async () => ({ stdout: "", stderr: "", code: 0 }));
+    await store.seedManagedIfEmpty();
+    await store.stop("fisternar");
+    expect(await store.managed()).toEqual(["zepherus", "neleourg"]);
+    expect(await store.start("fisternar")).toEqual({ ok: true });
+    expect(await store.managed()).toEqual(["zepherus", "neleourg", "fisternar"]);
+  });
+
+  it("start() leaves the char unmanaged when the systemd action fails", async () => {
+    const { store } = makeStore(async (_cmd, args) =>
+      args[0] === "start" ? { stdout: "", stderr: "Failed to start", code: 1 } : { stdout: "", stderr: "", code: 0 },
+    );
+    await store.seedManagedIfEmpty();
+    await store.stop("fisternar");
+    expect(await store.managed()).toEqual(["zepherus", "neleourg"]);
+    expect(await store.start("fisternar")).toEqual({ ok: false, error: "Failed to start" });
+    expect(await store.managed()).toEqual(["zepherus", "neleourg"]);
   });
 
   it("stop does not unmanage when the systemctl action fails", async () => {

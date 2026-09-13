@@ -43,11 +43,20 @@ export class CharactersStore {
     return this.yamlChars().find((c) => c.char_name.toLowerCase() === name.toLowerCase());
   }
 
-  /** Seed the managed list from entry.yaml once at boot (v1 seeded its DB at boot). */
+  /**
+   * Reconcile the managed list with entry.yaml at boot: seed it when empty,
+   * otherwise add any yaml character the list is missing (v1 seeded its DB at boot).
+   */
   async seedManagedIfEmpty(): Promise<void> {
     const existing = await this.kv.get(MANAGED_KEY);
-    if (existing !== null) return;
-    await this.kv.set(MANAGED_KEY, JSON.stringify(this.yamlChars().map((c) => c.char_name.toLowerCase())));
+    const yamlNames = this.yamlChars().map((c) => c.char_name.toLowerCase());
+    if (existing === null) {
+      await this.kv.set(MANAGED_KEY, JSON.stringify(yamlNames));
+      return;
+    }
+    const list = JSON.parse(existing) as string[];
+    const missing = yamlNames.filter((n) => !list.includes(n));
+    if (missing.length > 0) await this.kv.set(MANAGED_KEY, JSON.stringify([...list, ...missing]));
   }
 
   async managed(): Promise<string[]> {
@@ -99,7 +108,11 @@ export class CharactersStore {
   async start(name: string): Promise<ActionResult | null> {
     const ch = this.known(name);
     if (!ch) return null;
-    return this.systemd.action("start", ch.char_name);
+    const res = await this.systemd.action("start", ch.char_name);
+    // Re-manage on success: a stopped char stays unmanaged (see stop()), so without
+    // this the watchdog would never cover it again after one deliberate stop.
+    if (res.ok) await this.setManaged(ch.char_name, true);
+    return res;
   }
 
   /** Stop a session; unmanage (so the watchdog won't restart it) only when the stop succeeded. */

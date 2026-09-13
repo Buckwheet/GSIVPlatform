@@ -5,9 +5,16 @@ import type { ScanCharResult, ScanStage } from "../../core/scan-runner.js";
 export type AccountStatus = "queued" | "running" | "done" | "partial" | "failed";
 export type JobStatus = "running" | "done" | "partial" | "failed";
 
+/** A scan target character: its name plus whether a live session must be left alone. */
+export interface ScanTargetChar {
+  name: string;
+  /** True for test/Shattered chars (game_code GST/GSF) — never bounce a live session. */
+  skipIfActive: boolean;
+}
+
 export interface ScanAccountState {
   account: string;
-  chars: string[];
+  chars: ScanTargetChar[];
   status: AccountStatus;
   charsDone: number;
   charsFailed: number;
@@ -29,12 +36,16 @@ export interface ScanJob {
 
 export interface ScanTarget {
   account: string;
-  chars: string[];
+  chars: ScanTargetChar[];
 }
 
 /** Narrow scanner surface the store depends on (ScanRunner satisfies it). */
 export interface CharScanner {
-  scanChar(char: string, onStage?: (stage: ScanStage, detail: string) => void): Promise<ScanCharResult>;
+  scanChar(
+    char: string,
+    skipIfActive: boolean,
+    onStage?: (stage: ScanStage, detail: string) => void,
+  ): Promise<ScanCharResult>;
 }
 
 /** A failed character as the runner reports it (never "done"). */
@@ -106,6 +117,9 @@ export interface ScansStoreOptions {
 
 const DEFAULT_SKIP = ["UNFOCUSEDPIE"];
 
+/** Test (GST) and Shattered (GSF) characters — units that run unattended while live. */
+const TEST_GAME_CODES = new Set(["GST", "GSF"]);
+
 function defaultOkAccounts(db: CoreDb): () => string[] {
   return () => {
     try {
@@ -161,7 +175,7 @@ export class ScansStore {
 
   /** account -> chars target set (default = auth-ok minus skip; explicit overrides auth filter). */
   targets(explicit?: string[]): ScanTarget[] {
-    const map = new Map<string, string[]>();
+    const map = new Map<string, ScanTargetChar[]>();
     const okSet = explicit ? null : new Set(this.okAccounts());
     const want = explicit ? new Set(explicit.map((s) => s.toUpperCase())) : null;
     for (const ch of this.yaml.read()) {
@@ -169,7 +183,7 @@ export class ScansStore {
       if (okSet && !okSet.has(ch.account)) continue;
       if (want && !want.has(ch.account)) continue;
       const list = map.get(ch.account) ?? [];
-      list.push(ch.char_name);
+      list.push({ name: ch.char_name, skipIfActive: TEST_GAME_CODES.has(ch.game_code) });
       map.set(ch.account, list);
     }
     return [...map.entries()]
@@ -302,19 +316,24 @@ export class ScansStore {
         acct.startedAt = this.now();
         this.emit("scan_update", this.snapshot());
         const failures: CharFailure[] = [];
+        const skipped: string[] = [];
         for (const char of acct.chars) {
-          acct.current = char;
+          acct.current = char.name;
           acct.stage = "starting";
           this.emit("scan_update", this.snapshot());
-          const res = await this.runner.scanChar(char, (stage) => {
+          const res = await this.runner.scanChar(char.name, char.skipIfActive, (stage) => {
             acct.stage = stage;
             this.emit("scan_update", this.snapshot());
           });
           if (res.result === "done") acct.charsDone += 1;
-          else {
+          else if (res.result === "skipped") {
+            // A live test/Shattered session deliberately left alone. Not a failure —
+            // no charsFailed bump — but it still gets an audit row in scan_chars.
+            skipped.push(char.name);
+          } else {
             acct.charsFailed += 1;
-            acct.error = acct.error ?? `${char}: ${res.error ?? res.result}`;
-            failures.push({ char, result: res.result, error: res.error });
+            acct.error = acct.error ?? `${char.name}: ${res.error ?? res.result}`;
+            failures.push({ char: char.name, result: res.result, error: res.error });
           }
           acct.current = null;
           acct.stage = null;
@@ -324,7 +343,7 @@ export class ScansStore {
         }
         acct.status = acct.charsFailed === 0 ? "done" : acct.charsDone === 0 ? "failed" : "partial";
         acct.finishedAt = this.now();
-        this.persistAccount(acct);
+        this.persistAccount(acct, skipped);
         this.emit("scan_update", this.snapshot());
       }
     };
@@ -344,7 +363,7 @@ export class ScansStore {
     }
   }
 
-  private persistAccount(acct: ScanAccountState): void {
+  private persistAccount(acct: ScanAccountState, skipped: string[] = []): void {
     const jobId = this.current?.id;
     if (jobId == null) return;
     this.db
@@ -369,6 +388,17 @@ export class ScansStore {
     );
     for (const f of acct.failures) {
       insChar.run(jobId, acct.account, f.char, f.result, f.code, f.reason, f.error ?? null);
+    }
+    for (const name of skipped) {
+      insChar.run(
+        jobId,
+        acct.account,
+        name,
+        "skipped",
+        "skipped",
+        "already playing — live session left untouched",
+        null,
+      );
     }
   }
 

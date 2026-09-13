@@ -13,7 +13,7 @@ interface CharFailure {
 }
 interface ScanAccountState {
   account: string;
-  chars: string[];
+  chars: { name: string; skipIfActive: boolean }[];
   status: string;
   charsDone: number;
   charsFailed: number;
@@ -56,7 +56,7 @@ interface HistoryJob {
 }
 interface Target {
   account: string;
-  chars: string[];
+  chars: { name: string; skipIfActive: boolean }[];
 }
 interface ScheduleState {
   enabled: boolean;
