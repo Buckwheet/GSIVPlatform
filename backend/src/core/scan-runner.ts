@@ -6,16 +6,26 @@
 // Systemd + InvDb capabilities and a caller-supplied lich channel.
 // ---------------------------------------------------------------------------
 
-export type ScanStage = "starting" | "waiting_online" | "scanning" | "tickets" | "done" | "failed" | "timeout";
+export type ScanStage =
+  | "starting"
+  | "waiting_online"
+  | "scanning"
+  | "tickets"
+  | "done"
+  | "failed"
+  | "timeout"
+  | "skipped";
 
 export interface ScanCharResult {
   char: string;
-  result: "done" | "timeout" | "failed";
+  result: "done" | "timeout" | "failed" | "skipped";
   error?: string;
 }
 
 export interface ScanRunnerDeps {
   systemd: { action(action: "start" | "stop", name: string): Promise<{ ok: boolean; error?: string }> };
+  /** Read-only unit status — used to leave a live test/Shattered session alone. */
+  show(name: string): Promise<{ active: boolean }>;
   invDb: { charTimestamp(name: string): number | null };
   sendScript(char: string, script: string): Promise<void>;
   isOnline(char: string): Promise<boolean>;
@@ -51,11 +61,29 @@ export class ScanRunner {
     this.timings = { ...DEFAULT_TIMINGS, ...timings };
   }
 
-  /** Scan one character end-to-end, reporting each stage transition. */
-  async scanChar(char: string, onStage?: (stage: ScanStage, detail: string) => void): Promise<ScanCharResult> {
-    const { systemd, invDb, sendScript, isOnline } = this.deps;
+  /**
+   * Scan one character end-to-end, reporting each stage transition.
+   *
+   * `skipIfActive` is true for test/Shattered characters (`game_code` GST/GSF):
+   * those run unattended for hours on the very unit this scan would start and
+   * stop, so a live session must never be bounced (issue #93). Production
+   * characters keep the unconditional start -> scan -> stop behavior.
+   */
+  async scanChar(
+    char: string,
+    skipIfActive: boolean,
+    onStage?: (stage: ScanStage, detail: string) => void,
+  ): Promise<ScanCharResult> {
+    const { systemd, show, invDb, sendScript, isOnline } = this.deps;
     const t = this.timings;
     const stage = (s: ScanStage, detail = char) => onStage?.(s, detail);
+
+    // Before touching the unit at all: an already-active test/Shattered session
+    // is playing, not waiting to be scanned. Bail out without ever calling stop.
+    if (skipIfActive && (await show(char)).active) {
+      stage("skipped", "already playing");
+      return { char, result: "skipped" };
+    }
 
     stage("starting");
     const started = await systemd.action("start", char);
