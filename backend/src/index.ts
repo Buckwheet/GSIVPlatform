@@ -177,7 +177,9 @@ const scansStore = new ScansStore(
   (type, payload) => eventBus.emit(type, payload),
   (type, char, detail, source) => eventLog.log(type, char, detail, source),
   {
-    skipAccounts: (process.env.SCAN_SKIP_ACCOUNTS ?? "UNFOCUSEDPIE")
+    // DRINK (Tune/Clio, Shattered) never runs the invdb scan at all - hardcoded,
+    // not conditional on game_code/skipIfActive (issue #93).
+    skipAccounts: (process.env.SCAN_SKIP_ACCOUNTS ?? "UNFOCUSEDPIE,DRINK")
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean),
