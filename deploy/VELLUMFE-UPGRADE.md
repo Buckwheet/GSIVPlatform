@@ -5,13 +5,14 @@
 > carry), `deploy/vellumfe/build-vellumfe.sh` (box-side build).
 > Runtime/deploy context: `deploy/V2-DEPLOYMENT.md` §VellumFE.
 
-**Last run:** 2026-09-11 — first real run of this playbook. `v0.3.0-beta.50` was
-built from `deploy/vellumfe/gsiv-webui.patch` (§5, `BUILD-OK`, 21m32s, zero
-downtime) and swapped into all five stream units (§6). Deployed binary =
-`vellum-fe 0.3.0-beta.50`, sha256 `61c0707734aa…60`; the previous
-`0.3.0-beta.37` (hand-built 2026-08-11 with the same two web-UI patches, now
-captured as the patch artifact above, sha256 `6f2a408f…`) is kept at
-`/opt/vellumfe/vellum-fe.bak-0.3.0-beta.37` for rollback.
+**Last run:** 2026-11-14 — upgraded from `0.3.0-beta.50` to `v0.3.0-beta.52`.
+`Buckwheet/VellumFE` `gsiv` merged `v0.3.0-beta.52` (`75f45a7a`); `v0.3.0-beta.52`
+was built cleanly on the box from `deploy/vellumfe/gsiv-webui.patch` (§5,
+`BUILD-OK`, zero downtime) and swapped into all six stream units (§6). Deployed
+binary = `vellum-fe 0.3.0-beta.52`, sha256 `21970792fd2371ee6b0c5242ed34bfbfeecefc5cf918c088f3b76de4b9c7cd50`
+(72,564,344 B); `VELLUM_VERSION=0.3.0-beta.52` updated in `.env` + `updates`
+reports `updateAvailable: false, unread: 0`; the previous `0.3.0-beta.50` binary
+is kept at `/opt/vellumfe/vellum-fe.bak-0.3.0-beta.50` for rollback.
 
 ---
 
@@ -61,7 +62,7 @@ A VellumFE release ships Linux/macOS/Windows/Android/iOS binaries. We take
 | Binary | `/opt/vellumfe/vellum-fe` (currently `vellum-fe 0.3.0-beta.37`) |
 | Build source (historical) | `/opt/vellumfe-src` — shallow upstream clone @ `526b263`, hand-patched `app.js` |
 | Stream unit | `/etc/systemd/system/vellum-fe@.service` (template) + per-char drop-ins `vellum-fe@<Char>.service.d/` — **a char can have a unit with no drop-in dir (Fisternar does)** |
-| Streamed chars | **discover from the UNITS, not the drop-in dirs:** `ssh ubuntu@51.68.235.144 "systemctl list-units 'vellum-fe@*' --plain --no-legend"` — **5 as of 2026-09-11:** Aeton, Diynasta, Fisternar, Neleourg, Vaikar (all `active running`) |
+| Streamed chars | **discover from the UNITS, not the drop-in dirs:** `ssh ubuntu@51.68.235.144 "systemctl list-units 'vellum-fe@*' --plain --no-legend"` — **6 as of 2026-11-14:** Aeton, Diynasta, Fisternar, Neleourg, Tune, Vaikar (all `active running`) |
 | Ports | detach `910X`, web `920X`, per char (`VELLUM_STREAMS` in the server `.env`) |
 | Public URL | `https://<char>.phylactery.ovh/play#token=…&lich=127.0.0.1:<detach>&name=<Char>` via Caddy (`vellum.phylactery.ovh` carries basic_auth) |
 | Platform seam | backend module `gameview` (`VELLUM_BASE_URL`, `VELLUM_STREAM_DOMAIN`, `VELLUM_STREAMS`, `VELLUM_TOKEN`, scope `gameview.read`) |
@@ -116,12 +117,13 @@ release.
 | `app.js` as deployed (upstream `526b263` + patch) | `6f2a408fe3de1aaaea3c63169f3ee3348422dc86b48b4729a794cd9e8d187a59` | 294,784 B |
 | upstream `app.js` @ `526b263` (pre-patch) | `009bc3ee5f9ad44c5cf099573c01c662852a32e01396e0fa548b35f09ec35413` | 292,949 B |
 | upstream `app.js` @ tag `v0.3.0-beta.50` (pre-patch, checked 2026-09-11) | `52892d9e304329da2b0e7284f8e8777388d5995a3ea18d5c404d268f14881f31` | 317,961 B |
+| upstream `app.js` @ tag `v0.3.0-beta.52` (pre-patch, checked 2026-11-14) | `f9444a7e3ec40a0374724d0e57b70d009a163bb6639acbf1fef179d5f53f5260` | — |
+| `app.js` @ `v0.3.0-beta.52` + patch (checked 2026-11-14) | `61cdf5f73e4313130f88024115426ce8d184b537661f07f8c094d4ceda23b5d6` | 319,825 B |
 
-**Verified 2026-09-11:** the current patch still applies to `v0.3.0-beta.50`
-unchanged (`Hunk #2/#3/#4 succeeded at +64 lines`) — upstream grew `app.js`
-*above* our anchors but left the context intact, so a beta.50 upgrade needs
-**no porting** (§3's merge is a no-op; result 319,796 B, 4 × `autoConnectLich`
-+ 5 × `zeroClickConnecting`).
+**Verified 2026-11-14:** `deploy/vellumfe/gsiv-webui.patch` also applies cleanly
+to `v0.3.0-beta.52` unchanged (5 hunks merged into `Buckwheet/VellumFE` `gsiv`
+at `75f45a7a`; live build binary sha256 `21970792fd2371ee6b0c5242ed34bfbfeecefc5cf918c088f3b76de4b9c7cd50`,
+319,825 B `app.js`, 4 × `autoConnectLich` + 5 × `zeroClickConnecting`).
 
 **Do not treat a tag as immutable.** On 2026-09-11 the same
 `.../archive/refs/tags/v0.3.0-beta.50.tar.gz` URL served a **326 KB** `app.js`

@@ -122,22 +122,28 @@ curl -s -H 'Host: gsiv.phylactery.ovh' -H "Authorization: Bearer $TOK" http://12
 - Stream more chars (3-step recipe below) when they come online. Zero-click Watch flow: **confirmed in a real browser 2026-08-12**; the login-form flash seen on load was fixed (app.js patch 2, see §VellumFE) — hard-refresh to verify after any rebuild
 - `gs4sd_streamer.lic` / `ebounty_tracker.lic` are retired with v1 (BuckTV replaced by VellumFE; bounty has no v2 home yet)
 
-## Lich + Ruby upgrade (2026-08-11: v5.16.2 -> v5.19.1, Ruby 3.2 -> 4.0.6)
+## Lich + Ruby upgrade (2026-11-14: v5.21.0 dirty / v5.19.1 HEAD -> v5.24.2, Ruby 4.0.6 -> 4.0.9)
 
-Lich 5.19+ requires **Ruby >= 4.0** (v5.19.1 pins `.ruby-version` 4.0.3). Ubuntu 24.04's apt Ruby is
-3.2, so the server uses **rbenv Ruby 4.0.6** (`/home/ubuntu/.rbenv/versions/4.0.6`). The Lich install
-at `/opt/gs4sd/lich5` is a git clone of `elanthia-online/lich-5`; upgrades are done by tag checkout
-(`scripts/`, `data/`, `maps/`, `logs/` are gitignored -> preserved; backup first).
+Lich 5.24+ requires **Ruby >= 4.0** (v5.24.2 pins `.ruby-version` 4.0.9). Ubuntu 24.04's apt Ruby is
+3.2 (kept as `/usr/bin/ruby` for `gsiv-platform` `PasswordCipher` compatibility — verified against
+`v5.24.2`), so the server uses **rbenv Ruby 4.0.9** (`/home/ubuntu/.rbenv/versions/4.0.9`). The Lich
+install at `/opt/gs4sd/lich5` is a git clone of `elanthia-online/lich-5`; upgrades are done by tag
+checkout (`scripts/`, `data/`, `maps/`, `logs/` are gitignored -> preserved; backup first).
 
-**Current versions:** Ruby 4.0.6 (rbenv), Lich v5.19.1 (detached HEAD at tag). Bundle: full
-`bundle install` under 4.0.6 (78 gems; gtk3/curses native builds succeeded so no `BUNDLE_WITHOUT`
-needed). Lich units run `/home/ubuntu/.rbenv/versions/4.0.6/bin/ruby` (base unit + every
-per-char override + lich-test — ALL must be repointed together).
+**Current versions (updated 2026-11-14):** Ruby 4.0.9 (rbenv), Lich v5.24.2 (`8c8816d0`, detached
+HEAD at tag; stock upstream `lib/gemstone/infomon.rb` with `Lich.open_sequel_sqlite` +
+`@deferred`/`@unpersisted` backoff, plus our two `scripts/invdb.lic` patches preserved). Bundle:
+full `bundle install` under 4.0.9 (78 gems satisfied). Non-Amn Lich units run
+`/home/ubuntu/.rbenv/versions/4.0.9/bin/ruby` (base unit + per-char drop-ins for `Aeton`, `Clio`,
+`Diynasta`, `Fisternar`, `Neleourg`, `Tune`, `Vaikar` + `gs4sd-lich-test@.service` — ALL must be
+repointed together; retired `gs4sd_streamer` also removed from `Clio`, `Tune`, and
+`gs4sd-lich-test@.service`). `Amn` untouched. Pre-upgrade backups: `/opt/gs4sd/lich5-upgrade-backup-2026-11-14.tgz`
+and `/opt/gs4sd/backups/2026-11-14-pre-upgrade/`.
 
 **To update Lich again:**
 1. Backup: `sudo tar czf /opt/gs4sd/lich5-upgrade-backup-YYYY-MM-DD.tgz --exclude=logs --exclude=.git -C /opt/gs4sd lich5`
 2. `cd /opt/gs4sd/lich5 && git fetch --tags origin && git checkout v<new>` (or `git checkout main` to track upstream)
-3. `export PATH="$HOME/.rbenv/versions/4.0.6/bin:$PATH" && bundle install`
+3. `export PATH="$HOME/.rbenv/versions/4.0.9/bin:$PATH" && bundle install`
 4. There is no throwaway test char — **Amn is off-limits; test only on Fisternar/Neleourg**. After
    `bundle install`, boot-check the new stack directly: `cd /opt/gs4sd/lich5 && DISPLAY= timeout 20
    ruby lich.rbw --login Fisternar --without-frontend --scripts=/opt/gs4sd/lich5/scripts` and watch
@@ -192,7 +198,7 @@ gate a single timer run started ~70 disabled Lich units and blew the v2 rate lim
 ## VellumFE streams (2026-08-11)
 
 Headless per-character game streams replacing bucktv's role (dashboard Watch links).
-- Binary: upstream `Nisugi/VellumFE` `v0.3.0-beta.37` linux-x86_64 (sha256-verified) at `/opt/vellumfe/vellum-fe`; deps `libspeechd2 libasound2t64` (Ubuntu 24.04).
+- Binary: upstream `Nisugi/VellumFE` linux-x86_64 + our `app.js` patch at `/opt/vellumfe/vellum-fe` (currently **`v0.3.0-beta.52`** across all 6 stream units `Aeton`, `Diynasta`, `Fisternar`, `Neleourg`, `Tune`, `Vaikar`, swapped 2026-11-14; originally `v0.3.0-beta.37`); deps `libspeechd2 libasound2t64` (Ubuntu 24.04).
 - Lich: each streamed char's unit gets `--detachable-client=<port>` (Profanity detach protocol — VellumFE is ProfanityFE rewritten). Drop-ins: `/etc/systemd/system/gs4sd-lich@<Char>.service.d/override.conf` (backed up before edit).
 - Stream unit: `vellum-fe@<Char>.service` template + per-char drop-in override for ports. Alloc: detach `9101+`, web `9201+` by char (Fisternar 9101/9201, Neleourg 9102/9202).
 - Caddy: `vellum.phylactery.ovh` → basic_auth (`gsiv` user, hash in Caddyfile; change with `caddy hash-password`) → reverse_proxy `127.0.0.1:<web>`.
